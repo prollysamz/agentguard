@@ -81,6 +81,11 @@ class Guard:
         self._counts = Counter()
 
     @property
+    def tools(self):
+        """Registered tool names, for building model-facing tool lists and schemas."""
+        return tuple(self._tools)
+
+    @property
     def summary(self):
         return {effect.value: self._counts[effect.value] for effect in Effect}
 
@@ -215,7 +220,13 @@ class Guard:
         policy_result, policy_reason = self.engine.evaluate(action)
         risk = score(action, self.session)
         reasons = [policy_reason, *risk.reasons]
-        if self.judge is not None and policy_result != Effect.DENY and not risk.hard_deny:
+        judged = getattr(self.judge, "capabilities", None)
+        if (
+            self.judge is not None
+            and policy_result != Effect.DENY
+            and not risk.hard_deny
+            and (judged is None or action.capability in judged)
+        ):
             try:
                 semantic = self.judge.evaluate(action.model_copy(deep=True))
                 if (
@@ -224,10 +235,13 @@ class Guard:
                     or not 0 <= semantic.score <= 100
                 ):
                     raise ValueError("Invalid semantic risk")
-                risk = Risk(
-                    max(risk.score, semantic.score), (), risk.hard_deny or semantic.hard_deny
-                )
+                # Model verdicts are fallible: a judge "deny" escalates to human approval,
+                # while a judge score at or above the deny threshold still denies.
+                floor = self.policy.risk.ask if semantic.hard_deny is True else 0
+                risk = Risk(max(risk.score, semantic.score, floor), (), risk.hard_deny)
                 reasons.extend(semantic.reasons)
+                if floor:
+                    reasons.append("Semantic judge flagged this action; human approval required")
             except Exception:
                 reasons.append("Semantic judge unavailable; deterministic evaluation retained")
         effect = policy_result

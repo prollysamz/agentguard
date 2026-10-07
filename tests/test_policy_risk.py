@@ -1,6 +1,7 @@
 import pytest
 
 from agentguard import GuardDenied, GuardError
+from agentguard.approval import Approval
 from agentguard.policy.loader import load_policy
 from agentguard.policy.matcher import domain_matches
 from agentguard.risk.scorer import Risk
@@ -223,3 +224,55 @@ def test_judge_failure_uses_deterministic_result(make_guard):
 
     assert read_file("README.md") == "ok"
     assert "deterministic evaluation retained" in guard.audit.path.read_text()
+
+
+def test_judge_deny_flag_escalates_to_approval(make_guard):
+    class Judge:
+        def evaluate(self, action):
+            return Risk(10, ("Suspicious",), True)
+
+    seen = []
+
+    class Provider:
+        def request(self, action, decision):
+            seen.append(decision.effect)
+            return Approval(True, "alice")
+
+    guard = make_guard(
+        [{"capability": "filesystem.read", "effect": "allow"}], judge=Judge(), approval=Provider()
+    )
+
+    @guard.tool(capability="filesystem.read")
+    def read_file(path: str):
+        return "ok"
+
+    assert read_file("README.md") == "ok"
+    assert seen == ["ask"]
+
+
+def test_judge_scoped_to_capabilities(make_guard):
+    calls = []
+
+    class Judge:
+        capabilities = frozenset({"shell.execute"})
+
+        def evaluate(self, action):
+            calls.append(action.capability)
+            return Risk(0, ("Fine",))
+
+    guard = make_guard(
+        [{"capability": c, "effect": "allow"} for c in ["filesystem.read", "shell.execute"]],
+        judge=Judge(),
+    )
+
+    @guard.tool(capability="filesystem.read")
+    def read_file(path: str):
+        return "ok"
+
+    @guard.tool(capability="shell.execute")
+    def shell(cmd: str):
+        return "ran"
+
+    read_file("README.md")
+    shell("run_tests")
+    assert calls == ["shell.execute"]

@@ -78,12 +78,22 @@ agentguard demo --scripted                      # offline, no model
 ```
 
 The demo detects installed models through Ollama's `/api/tags`; `--model` picks one
-explicitly. `--judge` separately enables a Gemma security judge, including on a scripted run.
-Both use local Ollama `/api/chat` with structured JSON output. The model name is
-configurable. The agent has a 12-step limit and may complete or fail the exercise
-depending on its proposals; the offline demo is reproducible. Judge timeout, invalid
-output, or service failure retains deterministic checks. Semantic output can only
-increase risk or deny, never relax policy. The judge receives redacted action data.
+explicitly (any Ollama model works, e.g. `qwen3:8b`). `--judge` separately enables a Gemma
+security judge, including on a scripted run. Both use local Ollama `/api/chat` with
+structured JSON output, temperature 0 and thinking disabled. The agent's tool field is
+constrained to the registered tool names, it sees denial reasons, and it is stopped from
+repeating a denied action. It has a 12-step limit and may complete or fail the exercise
+depending on its proposals; the scripted demo is fully reproducible. With `gemma3:4b`
+the agent reads the injected README, ignores it, fixes the bug, reruns the failing test
+until it passes, and requests the push, which is escalated for approval.
+
+The judge can only increase risk, never relax policy. A judge score at or above the deny
+threshold denies; a judge `deny` flag with a lower score escalates to human approval,
+because small models produce false positives. `GemmaJudge(guidance=...)` adds trusted
+deployment context to its prompt, and `capabilities=...` limits review to the actions
+where intent matters. The demo judges shell, network and message actions; file edits stay
+under deterministic checks. Judge timeout, invalid output or service failure retains
+deterministic checks. The judge receives redacted action data.
 
 API references: [Ollama chat](https://docs.ollama.com/api/chat),
 [structured outputs](https://ollama.com/blog/structured-outputs).
@@ -176,7 +186,8 @@ When an executor is provided, the original function is never invoked.
 | NetworkExecutor | GET only, HTTPS:443, independent domains, public DNS preflight, no redirects/proxies, bounded output | Trusted allowlisted DNS; use an egress proxy/firewall for hostile DNS |
 | WorkspaceVerifier | Before/after file hashes; only the requested write/delete may change a file | Small isolated directory; does not see transient or out-of-root effects |
 
-Shell executables and scripts must be trusted. A test runner can execute arbitrary
+`ShellExecutor(..., check=False)` returns nonzero exits (such as failing tests) as
+results instead of failing and halting the session. Shell executables and scripts must be trusted. A test runner can execute arbitrary
 repository code; the demo runs a tiny disposable fixture. Never treat the same runner
 as isolation for a hostile repository. Timeouts attempt process-tree cleanup, but do
 not guarantee containment of detached descendants. Custom tools have no automatic

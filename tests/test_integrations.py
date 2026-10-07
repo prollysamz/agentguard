@@ -147,6 +147,60 @@ def test_gemma_agent_dispatches_through_guard(make_guard, monkeypatch):
     assert read_log(guard.audit.path)[-1]["stage"] == "denied"
 
 
+def test_gemma_agent_recovers_from_bad_steps_and_repeated_denials(make_guard, monkeypatch):
+    guard = make_guard()  # default deny
+
+    @guard.tool(capability="filesystem.read")
+    def read_file(path: str):
+        pytest.fail("Gemma must not bypass guard")
+
+    agent = GemmaAgent(guard)
+    read = json.dumps({"tool": "read_file", "arguments": {"path": "README.md"}, "final": ""})
+    outputs = iter(
+        [
+            "not json",
+            json.dumps({"tool": "", "arguments": {}, "final": ""}),
+            read,
+            read,
+            json.dumps({"tool": "", "arguments": {}, "final": "Stopped after denial."}),
+        ]
+    )
+    prompts = []
+
+    def chat(messages, schema):
+        assert schema["properties"]["tool"]["enum"] == ["", "read_file"]
+        prompts.append(messages[-1]["content"])
+        return next(outputs)
+
+    monkeypatch.setattr(agent.client, "chat", chat)
+    assert agent.run("Read the file") == "Stopped after denial."
+    assert "Policy default: deny" in prompts[3]  # The model sees why it was denied.
+    assert "already denied" in prompts[4]
+    assert sum(e["stage"] == "proposed" for e in read_log(guard.audit.path)) == 1
+
+
+def test_ollama_request_disables_thinking_and_judge_uses_guidance(tmp_path, monkeypatch):
+    seen = []
+
+    def response(request):
+        seen.append(json.loads(request.content))
+        content = {"intent": "tests", "score": 5, "reason": "routine", "deny": False}
+        return httpx.Response(200, json={"message": {"content": json.dumps(content)}})
+
+    mock_ollama(monkeypatch, response)
+    action = Action(
+        agent_id="test",
+        session_id="test",
+        tool="run_shell",
+        capability="shell.execute",
+        arguments={"cmd": "run_tests"},
+        context=Context(working_directory=str(tmp_path)),
+    )
+    assert GemmaJudge(guidance="run_tests runs unit tests").evaluate(action).score == 5
+    assert seen[0]["think"] is False
+    assert "run_tests runs unit tests" in seen[0]["messages"][0]["content"]
+
+
 def test_real_mcp_registration_and_dispatch(make_guard):
     mcp = pytest.importorskip("mcp.server.fastmcp")
     from agentguard.adapters.mcp import register_tool

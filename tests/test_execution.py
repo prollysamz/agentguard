@@ -165,3 +165,13 @@ def test_network_rejects_private_dns(tmp_path, monkeypatch):
         NetworkExecutor(["example.com"]).execute(
             action(tmp_path, "network.request", {"url": "https://example.com"})
         )
+
+
+def test_shell_check_false_returns_failing_exit(tmp_path):
+    executor = ShellExecutor(
+        tmp_path,
+        {"test": [sys.executable, "-c", "print('FAIL'); raise SystemExit(1)"]},
+        check=False,
+    )
+    result = executor.execute(action(tmp_path, "shell.execute", {"cmd": "test"}))
+    assert result["returncode"] == 1 and "FAIL" in result["output"]

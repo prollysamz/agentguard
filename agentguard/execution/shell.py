@@ -20,6 +20,7 @@ class ShellExecutor:
         timeout: float = 10,
         max_output_bytes: int = 65536,
         environment: dict[str, str] | None = None,
+        check: bool = True,
     ):
         self.root = Path(root).resolve(strict=True)
         self.commands = {k: tuple(v) for k, v in commands.items()}
@@ -29,6 +30,8 @@ class ShellExecutor:
         self.timeout = timeout
         self.max_output_bytes = max_output_bytes
         self.environment = dict(environment or {})
+        # check=False returns nonzero exits (e.g. failing tests) instead of raising.
+        self.check = check
 
     @staticmethod
     def _kill(process):
@@ -102,7 +105,7 @@ class ShellExecutor:
                 raise GuardError("Subprocess output stream did not close")
             if overflow.is_set():
                 raise GuardError("Command exceeded output limit")
-            if process.returncode:
+            if process.returncode and self.check:
                 raise GuardError(f"Command failed with exit code {process.returncode}")
             return {
                 "returncode": process.returncode,
