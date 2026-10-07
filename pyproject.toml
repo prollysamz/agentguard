@@ -12,8 +12,12 @@ license = "MIT"
 dependencies = ["pydantic>=2.9,<3", "PyYAML>=6.0.2,<7", "portalocker>=3,<4", "httpx>=0.28,<1"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "ruff>=0.11,<1", "build>=1,<2"]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1", "build>=1,<2", "langgraph>=1,<2"]
 mcp = ["mcp>=1.12,<2"]
+langchain = ["langchain-core>=1,<2"]
+openai-agents = ["openai-agents>=0.23,<1"]
+adk = ["google-adk>=2,<3"]
+all = ["agentguard-sdk[mcp,langchain,openai-agents,adk]"]
 
 [project.scripts]
 agentguard = "agentguard.cli.main:main"
@@ -23,6 +27,8 @@ packages = ["agentguard"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# ADK warns about its own experimental schema feature on every declaration.
+filterwarnings = ['ignore:\[EXPERIMENTAL\]:UserWarning']
 
 [tool.ruff]
 line-length = 100
