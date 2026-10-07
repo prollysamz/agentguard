@@ -1,0 +1,34 @@
+version: 1
+defaults:
+  effect: deny
+rules:
+  - capability: filesystem.read
+    paths: ["./workspace/**"]
+    effect: allow
+  - capability: filesystem.write
+    paths: ["./workspace/**"]
+    effect: allow
+  - capability: filesystem.delete
+    paths: ["./workspace/tmp/**"]
+    effect: allow
+  - capability: filesystem.delete
+    paths: ["./workspace/**"]
+    effect: ask
+  - capability: shell.execute
+    environment: production
+    effect: ask
+  - capability: network.request
+    domains: ["*.github.com", "docs.python.org"]
+    effect: allow
+  - capability: network.request
+    sensitive_data: [api_key, password, ssh_key]
+    effect: deny
+risk:
+  ask: 51
+  strong: 76
+  deny: 91
+limits:
+  max_calls_per_minute: 120
+  max_argument_bytes: 65536
+  max_recipients_per_action: 10
+
