@@ -175,3 +175,28 @@ def test_shell_check_false_returns_failing_exit(tmp_path):
     )
     result = executor.execute(action(tmp_path, "shell.execute", {"cmd": "test"}))
     assert result["returncode"] == 1 and "FAIL" in result["output"]
+
+
+def test_guarded_write_through_link_inside_root_rejected(make_guard, tmp_path, dir_link):
+    workspace = tmp_path / "work"
+    real = workspace / "real"
+    real.mkdir(parents=True)
+    (real / "target.txt").write_text("original")
+    dir_link(workspace / "link", real)
+    guard = make_guard([{"capability": "filesystem.write", "effect": "allow"}])
+
+    @guard.tool(capability="filesystem.write", executor=FilesystemExecutor(workspace))
+    def write_file(path: str, content: str):
+        pytest.fail("Original callback must never execute")
+
+    with pytest.raises(GuardError, match="session halted"):
+        write_file(str(workspace / "link" / "target.txt"), "modified")
+    assert (real / "target.txt").read_text() == "original"
+
+
+def test_verifier_rejects_directory_link(tmp_path, dir_link):
+    workspace = tmp_path / "work"
+    (workspace / "real").mkdir(parents=True)
+    dir_link(workspace / "link", workspace / "real")
+    with pytest.raises(GuardError, match="link"):
+        WorkspaceVerifier(workspace).before(None)

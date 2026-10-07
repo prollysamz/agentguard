@@ -276,3 +276,57 @@ def test_judge_scoped_to_capabilities(make_guard):
     read_file("README.md")
     shell("run_tests")
     assert calls == ["shell.execute"]
+
+
+def test_credential_path_reached_through_link_is_denied(make_guard, tmp_path, dir_link):
+    (tmp_path / ".ssh").mkdir()
+    dir_link(tmp_path / "keys", tmp_path / ".ssh")
+    guard = make_guard([{"capability": "filesystem.read", "effect": "allow"}])
+
+    @guard.tool(capability="filesystem.read")
+    def read_file(path: str):
+        pytest.fail("Linked credential path reached tool")
+
+    with pytest.raises(GuardDenied, match="Sensitive credential"):
+        read_file("keys/config")
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"to": "a@x.test", "cc": "b@x.test", "bcc": "c@x.test"},
+        {"to": "a@x.test; b@x.test", "cc": "", "bcc": ""},
+        {"to": "a@x.test", "cc": "", "bcc": "b@x.test, c@x.test"},
+    ],
+)
+def test_recipient_limit_counts_all_fields(make_guard, arguments):
+    policy = {
+        "version": 1,
+        "rules": [{"capability": "email.send", "effect": "allow"}],
+        "risk": {"ask": 99, "strong": 99, "deny": 100},
+        "limits": {"max_recipients_per_action": 1},
+    }
+    guard = make_guard(policy=policy)
+
+    @guard.tool(capability="email.send")
+    def send(to: str, cc: str, bcc: str):
+        pytest.fail("Recipient limit bypassed")
+
+    with pytest.raises(GuardDenied, match="Invalid or oversized"):
+        guard.call("send", arguments)
+
+
+def test_recipient_limit_allows_single_recipient(make_guard):
+    policy = {
+        "version": 1,
+        "rules": [{"capability": "email.send", "effect": "allow"}],
+        "risk": {"ask": 99, "strong": 99, "deny": 100},
+        "limits": {"max_recipients_per_action": 1},
+    }
+    guard = make_guard(policy=policy)
+
+    @guard.tool(capability="email.send")
+    def send(to: str, cc: str = "", bcc: str = ""):
+        return "sent"
+
+    assert send("a@x.test") == "sent"

@@ -7,14 +7,19 @@ from agentguard.policy.schema import Rule
 from agentguard.risk.secrets import detect_secrets
 
 
-def resolve_path(path: str, cwd: str) -> str:
-    """Absolute resolved path with its original case, used for execution."""
+def absolute_path(path: str, cwd: str) -> str:
+    """Absolute requested path, links unresolved, so executors can still detect them."""
     if not path or "\x00" in path:
         raise ValueError("Invalid path")
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
         candidate = Path(cwd) / candidate
-    return str(candidate.resolve())
+    return str(candidate)
+
+
+def resolve_path(path: str, cwd: str) -> str:
+    """Absolute path with links and .. resolved, keeping the original case."""
+    return str(Path(absolute_path(path, cwd)).resolve())
 
 
 def canonical_path(path: str, cwd: str) -> str:

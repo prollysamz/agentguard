@@ -2,6 +2,7 @@ import hashlib
 from pathlib import Path
 
 from agentguard.core.decision import GuardError
+from agentguard.execution.filesystem import is_link
 
 
 class WorkspaceVerifier:
@@ -14,7 +15,7 @@ class WorkspaceVerifier:
     def _snapshot(self):
         found, size = {}, 0
         for path in self.root.rglob("*"):
-            if path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction()):
+            if is_link(path):
                 raise GuardError("Verification workspace contains a link")
             if path.is_file():
                 size += path.stat().st_size

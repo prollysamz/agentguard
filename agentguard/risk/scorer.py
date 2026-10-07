@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from agentguard.core.action import Action
 from agentguard.core.context import SessionRiskContext
+from agentguard.policy.matcher import resolve_path
 from agentguard.risk.rules import (
     DANGEROUS_COMMANDS,
     EXTERNAL_COMMAND,
@@ -40,8 +41,12 @@ def score(action: Action, session: SessionRiskContext) -> Risk:
     outbound = cap in {"network.request", "email.send", "message.send", "repository.write"} or bool(
         EXTERNAL_COMMAND.search(command) or REMOTE_PUSH.search(command)
     )
-    if cap.startswith("filesystem.") and SENSITIVE_PATH.search(action.arguments.get("path", "")):
-        return Risk(100, ("Sensitive credential file access",), True)
+    if cap.startswith("filesystem."):
+        # Check the requested path and its link-resolved target.
+        requested = action.arguments.get("path", "")
+        resolved = resolve_path(requested, action.context.working_directory) if requested else ""
+        if SENSITIVE_PATH.search(requested) or SENSITIVE_PATH.search(resolved):
+            return Risk(100, ("Sensitive credential file access",), True)
     if cap in {"shell.execute", "repository.write"}:
         if SENSITIVE_PATH.search(command):
             return Risk(100, ("Command references credential files",), True)

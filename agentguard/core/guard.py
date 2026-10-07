@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import inspect
 import json
 import threading
@@ -20,7 +21,7 @@ from agentguard.core.context import SessionRiskContext
 from agentguard.core.decision import Decision, Effect, GuardDenied, GuardError
 from agentguard.policy.engine import PolicyEngine
 from agentguard.policy.loader import load_policy
-from agentguard.policy.matcher import resolve_path
+from agentguard.policy.matcher import absolute_path, resolve_path
 from agentguard.risk.scorer import Risk, score
 from agentguard.risk.secrets import detect_secrets
 
@@ -35,6 +36,22 @@ class Tool:
     verifier: object = None
 
 
+RECIPIENT_FIELDS = ("to", "cc", "bcc", "recipient", "recipients")
+# Guards whose call() is running in this context, so tools can make nested guarded calls.
+_ACTIVE_GUARDS = contextvars.ContextVar("agentguard_active_guards", default=frozenset())
+
+
+def _recipient_count(arguments):
+    count = 0
+    for key in RECIPIENT_FIELDS:
+        value = arguments.get(key)
+        if value is None:
+            continue
+        items = value if isinstance(value, list) else str(value).replace(";", ",").split(",")
+        count += sum(1 for item in items if str(item).strip())
+    return count
+
+
 def _run_coroutine(coroutine):
     """Run an async tool from synchronous call(), even inside a running event loop."""
     try:
@@ -42,7 +59,8 @@ def _run_coroutine(coroutine):
     except RuntimeError:
         return asyncio.run(coroutine)
     with ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coroutine).result()
+        context = contextvars.copy_context()
+        return pool.submit(context.run, asyncio.run, coroutine).result()
 
 
 class Guard:
@@ -77,6 +95,7 @@ class Guard:
         self.approval, self.approval_timeout, self.judge = approval, approval_timeout, judge
         self._tools = {}
         self._lock = threading.RLock()
+        self._marker = object()
         self._calls = deque()
         self._counts = Counter()
 
@@ -180,7 +199,9 @@ class Guard:
         }
         cap = tool.capability
         if cap.startswith("filesystem."):
-            arguments["path"] = resolve_path(arguments["path"], self.context.working_directory)
+            # Policy and risk match the resolved target; execution gets the requested path.
+            resolve_path(arguments["path"], self.context.working_directory)
+            arguments["path"] = absolute_path(arguments["path"], self.context.working_directory)
         if cap == "network.request":
             url = arguments["url"]
             if type(url) is not str or any(ord(c) <= 32 for c in url) or "\\" in url:
@@ -198,14 +219,8 @@ class Guard:
             command = arguments.get("cmd", arguments.get("command"))
             if type(command) is not str or not command.strip() or "\x00" in command:
                 raise ValueError("Missing or invalid command")
-        if cap == "email.send":
-            recipients = arguments.get("to", arguments.get("recipient", []))
-            count = (
-                len(recipients)
-                if isinstance(recipients, list)
-                else len(str(recipients).replace(";", ",").split(","))
-            )
-            if count > self.policy.limits.max_recipients_per_action:
+        if cap in {"email.send", "message.send"}:
+            if _recipient_count(arguments) > self.policy.limits.max_recipients_per_action:
                 raise ValueError("Too many recipients")
         return Action(
             agent_id=self.agent_id,
@@ -273,125 +288,132 @@ class Guard:
 
     async def acall(self, name, arguments):
         """Offload the serialized pipeline; cancellation cannot undo an executing tool."""
+        if self._marker in _ACTIVE_GUARDS.get():
+            # Nested inside one of this Guard's tools: run inline under the held lock.
+            return self.call(name, arguments)
         return await asyncio.to_thread(self.call, name, arguments)
 
     def call(self, name, arguments):
+        if self._marker in _ACTIVE_GUARDS.get():
+            # A tool this Guard is executing made a nested call; the outer call holds the lock.
+            return self._dispatch(name, arguments)
         with self._lock:
-            if not isinstance(name, str) or name not in self._tools:
-                return self._reject_malformed(name, "unknown", "Unknown tool")
-            tool = self._tools[name]
-            if self.session.halted:
-                return self._reject_malformed(
-                    name, tool.capability, "Session halted after execution or verification failure"
-                )
+            token = _ACTIVE_GUARDS.set(_ACTIVE_GUARDS.get() | {self._marker})
             try:
-                action = self._normalize(name, arguments, tool)
+                return self._dispatch(name, arguments)
+            finally:
+                _ACTIVE_GUARDS.reset(token)
+
+    def _dispatch(self, name, arguments):
+        if not isinstance(name, str) or name not in self._tools:
+            return self._reject_malformed(name, "unknown", "Unknown tool")
+        tool = self._tools[name]
+        if self.session.halted:
+            return self._reject_malformed(
+                name, tool.capability, "Session halted after execution or verification failure"
+            )
+        try:
+            action = self._normalize(name, arguments, tool)
+        except Exception:
+            return self._reject_malformed(
+                name, tool.capability, "Invalid or oversized tool arguments"
+            )
+        now = time.monotonic()
+        evaluation_failed = False
+        while self._calls and self._calls[0] <= now - 60:
+            self._calls.popleft()
+        if len(self._calls) >= self.policy.limits.max_calls_per_minute:
+            decision = Decision(Effect.DENY, Effect.DENY, 100, ("Session tool rate limit reached",))
+        else:
+            self._calls.append(now)
+            try:
+                decision = self._evaluate(action)
             except Exception:
-                return self._reject_malformed(
-                    name, tool.capability, "Invalid or oversized tool arguments"
-                )
-            now = time.monotonic()
-            evaluation_failed = False
-            while self._calls and self._calls[0] <= now - 60:
-                self._calls.popleft()
-            if len(self._calls) >= self.policy.limits.max_calls_per_minute:
+                evaluation_failed = True
                 decision = Decision(
-                    Effect.DENY, Effect.DENY, 100, ("Session tool rate limit reached",)
+                    Effect.DENY, Effect.DENY, 100, ("Policy or risk evaluation failed",)
                 )
-            else:
-                self._calls.append(now)
-                try:
-                    decision = self._evaluate(action)
-                except Exception:
-                    evaluation_failed = True
-                    decision = Decision(
-                        Effect.DENY, Effect.DENY, 100, ("Policy or risk evaluation failed",)
-                    )
-            self._counts[decision.effect.value] += 1
-            self._event(action, decision, "proposed", execution_status="not_executed")
-            approval = Approval(False)
-            allowed = decision.effect == Effect.ALLOW
-            if self.mode == "dry-run" and not evaluation_failed:
-                allowed = True
-            elif decision.effect == Effect.ASK and self.approval is not None:
-                approval = request_bounded(self.approval, action, decision, self.approval_timeout)
-                allowed = approval.approved
-            if not allowed:
-                self.session.denied_actions.append(action.id)
-                reasons = decision.reasons
-                if decision.effect == Effect.ASK:
-                    reasons += ("Approval rejected, unavailable, insufficient, or timed out",)
-                denied = Decision(Effect.DENY, decision.policy_result, decision.risk_score, reasons)
-                self._event(
-                    action, denied, "denied", final_decision="deny", execution_status="not_executed"
-                )
-                raise GuardDenied(denied)
+        self._counts[decision.effect.value] += 1
+        self._event(action, decision, "proposed", execution_status="not_executed")
+        approval = Approval(False)
+        allowed = decision.effect == Effect.ALLOW
+        if self.mode == "dry-run" and not evaluation_failed:
+            allowed = True
+        elif decision.effect == Effect.ASK and self.approval is not None:
+            approval = request_bounded(self.approval, action, decision, self.approval_timeout)
+            allowed = approval.approved
+        if not allowed:
+            self.session.denied_actions.append(action.id)
+            reasons = decision.reasons
+            if decision.effect == Effect.ASK:
+                reasons += ("Approval rejected, unavailable, insufficient, or timed out",)
+            denied = Decision(Effect.DENY, decision.policy_result, decision.risk_score, reasons)
+            self._event(
+                action, denied, "denied", final_decision="deny", execution_status="not_executed"
+            )
+            raise GuardDenied(denied)
+        self._event(
+            action,
+            decision,
+            "authorized",
+            final_decision="allow",
+            approved_by=approval.approved_by if approval.approved else None,
+            execution_status="pending",
+            dry_run_override=self.mode == "dry-run",
+        )
+        try:
+            before = tool.verifier.before(action.model_copy(deep=True)) if tool.verifier else None
             self._event(
                 action,
                 decision,
-                "authorized",
+                "executing",
                 final_decision="allow",
-                approved_by=approval.approved_by if approval.approved else None,
-                execution_status="pending",
-                dry_run_override=self.mode == "dry-run",
+                execution_status="started",
             )
-            try:
-                before = (
-                    tool.verifier.before(action.model_copy(deep=True)) if tool.verifier else None
-                )
-                self._event(
-                    action,
-                    decision,
-                    "executing",
-                    final_decision="allow",
-                    execution_status="started",
-                )
-                execution_action = action.model_copy(deep=True)
-                if tool.executor is not None:
-                    result = tool.executor.execute(execution_action)
-                else:
-                    result = tool.function(**execution_action.arguments)
-                    if inspect.isawaitable(result):
-                        result = _run_coroutine(result)
-                self._event(
-                    action, decision, "executed", final_decision="allow", execution_status="success"
-                )
-                verification = (
-                    tool.verifier.after(action.model_copy(deep=True), before, result)
-                    if tool.verifier
-                    else {"status": "not_configured"}
-                )
-                self.session.sensitive_data_seen.update(detect_secrets(result))
-                self.session.cumulative_risk += decision.risk_score
-                if action.capability.startswith("filesystem."):
-                    self.session.files_accessed.append(action.arguments["path"])
-                if action.capability == "network.request":
-                    self.session.domains_contacted.append(
-                        urlsplit(action.arguments["url"]).hostname
-                    )
-                self._event(
-                    action,
-                    decision,
-                    "observed",
-                    final_decision="allow",
-                    execution_status="success",
-                    verification=verification,
-                    result_type=type(result).__name__,
-                    sensitive_result=bool(detect_secrets(result)),
-                )
-                return result
-            except Exception as exc:
-                self.session.halted = True
-                # Avoid recording arbitrary exception strings which may contain credentials.
-                self._event(
-                    action,
-                    decision,
-                    "failed",
-                    final_decision="deny",
-                    execution_status="failed",
-                    error_type=type(exc).__name__,
-                    session_halted=True,
-                )
-                raise GuardError(
-                    "Execution or verification failed; session halted (action may have had effects)"
-                ) from exc
+            execution_action = action.model_copy(deep=True)
+            if tool.executor is not None:
+                result = tool.executor.execute(execution_action)
+            else:
+                result = tool.function(**execution_action.arguments)
+                if inspect.isawaitable(result):
+                    result = _run_coroutine(result)
+            self._event(
+                action, decision, "executed", final_decision="allow", execution_status="success"
+            )
+            verification = (
+                tool.verifier.after(action.model_copy(deep=True), before, result)
+                if tool.verifier
+                else {"status": "not_configured"}
+            )
+            self.session.sensitive_data_seen.update(detect_secrets(result))
+            self.session.cumulative_risk += decision.risk_score
+            if action.capability.startswith("filesystem."):
+                self.session.files_accessed.append(action.arguments["path"])
+            if action.capability == "network.request":
+                self.session.domains_contacted.append(urlsplit(action.arguments["url"]).hostname)
+            self._event(
+                action,
+                decision,
+                "observed",
+                final_decision="allow",
+                execution_status="success",
+                verification=verification,
+                result_type=type(result).__name__,
+                sensitive_result=bool(detect_secrets(result)),
+            )
+            return result
+        except Exception as exc:
+            self.session.halted = True
+            # Avoid recording arbitrary exception strings which may contain credentials.
+            self._event(
+                action,
+                decision,
+                "failed",
+                final_decision="deny",
+                execution_status="failed",
+                error_type=type(exc).__name__,
+                session_halted=True,
+            )
+            raise GuardError(
+                "Execution or verification failed; session halted (action may have had effects)"
+            ) from exc

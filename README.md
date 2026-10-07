@@ -109,8 +109,10 @@ Agent proposal → strict validation → policy → deterministic risk → optio
 `Guard.call(name, arguments)` is the common dispatch path. Capabilities, environment,
 agent identity, and working directory come from trusted registration/configuration,
 not from the model's request. `@guard.tool` also uses that path. Async functions and
-`await guard.acall(...)` are supported; calls in one Guard are serialized. Cancelling
-an async caller does not cancel or roll back an already executing tool.
+`await guard.acall(...)` are supported; calls in one Guard are serialized. A tool may
+make nested guarded calls (sync or async); they run inline under the outer call and are
+evaluated and audited normally. Cancelling an async caller does not cancel or roll back
+an already executing tool.
 
 Tools must declare explicit typed parameters, without variadic or positional-only
 arguments. Values are validated strictly (the string `"3"` is not an integer).
@@ -125,15 +127,19 @@ development, test, staging, and production.
 See [examples/policy.yaml](examples/policy.yaml). Load it with `Guard("policy.yaml")`.
 Policy version 1 supports ALLOW, DENY, ASK; path, domain, environment and sensitive-data
 conditions; risk thresholds; argument-size, recipient, and per-session rate limits.
+The recipient limit counts `to`, `cc`, `bcc`, `recipient` and `recipients` together
+for email and message tools.
 
 **Precedence:** any matching explicit DENY wins. Otherwise the first matching rule
 wins, followed by the default. Put narrow exceptions before broader ASK rules.
 Conditions within a rule are ANDed; values within each list are ORed. Risk can
 escalate ALLOW to ASK or DENY. Approval can never override DENY.
 
-Paths are resolved against the Guard's working directory, including `..`, `~`, and
-existing links, before both matching and execution. Matching is case-insensitive on
-Windows; execution keeps the requested filename case. Supported path patterns are an
+Paths are made absolute against the Guard's working directory. Policy matching and
+credential-path checks use the fully resolved target (`..`, `~` and existing links), and
+also check the requested path. Tools and executors receive the absolute requested path,
+so `FilesystemExecutor` can reject symlinks, junctions and other reparse points along it.
+Matching is case-insensitive on Windows; execution keeps the requested filename case. Supported path patterns are an
 exact path or a recursive `/root/**` prefix with a component boundary. Arbitrary
 glob patterns are rejected at policy load time. Domain patterns are exact hostnames
 or `*.example.com` (subdomains only, not the apex). Allowlists do not override hard
@@ -181,7 +187,7 @@ When an executor is provided, the original function is never invoked.
 
 | Component | Implemented controls | Scope |
 | --- | --- | --- |
-| FilesystemExecutor | Root confinement, link rejection, bounded reads/writes, file-only deletion | Trusted, non-concurrently-mutated workspace |
+| FilesystemExecutor | Root confinement, symlink/junction rejection, bounded reads/writes, file-only deletion | Trusted, non-concurrently-mutated workspace |
 | ShellExecutor | Exact string-to-argv mapping, absolute executable, no shell, filtered environment, timeout, bounded combined output | Administrator-approved commands; cwd is not a filesystem sandbox |
 | NetworkExecutor | GET only, HTTPS:443, independent domains, public DNS preflight, no redirects/proxies, bounded output | Trusted allowlisted DNS; use an egress proxy/firewall for hostile DNS |
 | WorkspaceVerifier | Before/after file hashes; only the requested write/delete may change a file | Small isolated directory; does not see transient or out-of-root effects |

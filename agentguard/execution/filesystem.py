@@ -1,6 +1,21 @@
+import os
+import stat
 from pathlib import Path
 
 from agentguard.core.decision import GuardError
+
+
+def is_link(path: Path) -> bool:
+    """Symlink or Windows reparse point (junction, mount point), on every Python version.
+
+    Path.is_junction() only exists from Python 3.12, so check the attributes directly.
+    """
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    attributes = getattr(info, "st_file_attributes", 0)
+    return stat.S_ISLNK(info.st_mode) or bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 class FilesystemExecutor:
@@ -19,7 +34,7 @@ class FilesystemExecutor:
             raise GuardError("Filesystem target outside permitted root")
         # Reject existing links, including Windows junctions where available.
         for part in (raw, *raw.parents):
-            if part.is_symlink() or (hasattr(part, "is_junction") and part.is_junction()):
+            if is_link(part):
                 raise GuardError("Linked filesystem target rejected")
         return path
 

@@ -1,5 +1,7 @@
 import asyncio
 import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -23,10 +25,9 @@ def test_allow_normalizes_and_audits_lifecycle(make_guard, tmp_path):
         return "hello"
 
     assert read_file("a/../README.md") == "hello"
-    assert (
-        reached[0].replace("\\", "/").lower()
-        == str(tmp_path / "README.md").replace("\\", "/").lower()
-    )
+    # Tools get the requested absolute path; policy matched its resolved target.
+    assert Path(reached[0]).is_absolute()
+    assert Path(reached[0]).resolve() == (tmp_path / "README.md").resolve()
     events = read_log(guard.audit.path)
     assert [e["stage"] for e in events] == [
         "proposed",
@@ -279,3 +280,33 @@ def test_audit_keeps_action_timestamp(make_guard):
     events = read_log(guard.audit.path)
     assert len({e["action_timestamp"] for e in events}) == 1
     assert all(e["action_timestamp"] <= e["timestamp"] for e in events)
+
+
+def test_nested_guarded_calls_do_not_deadlock(make_guard):
+    guard = make_guard([rule()])
+
+    @guard.tool(capability="filesystem.read")
+    async def inner(path: str) -> str:
+        return "inner"
+
+    @guard.tool(capability="filesystem.read")
+    def inner_sync(path: str) -> str:
+        return "inner sync"
+
+    @guard.tool(capability="filesystem.read")
+    async def outer(path: str) -> str:
+        return await inner(path) + " / " + inner_sync(path)
+
+    async def main():
+        # Both the async path and a sync call made inside a running event loop.
+        return await outer("README.md"), guard.call("outer", {"path": "README.md"})
+
+    # Don't wait on the worker at exit, so a deadlock regression fails instead of hanging.
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = pool.submit(asyncio.run, main())
+        assert future.result(timeout=10) == ("inner / inner sync", "inner / inner sync")
+    finally:
+        pool.shutdown(wait=False)
+    stages = [e["stage"] for e in read_log(guard.audit.path) if e["stage"] == "observed"]
+    assert len(stages) == 6
