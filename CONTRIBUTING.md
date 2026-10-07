@@ -1,7 +1,13 @@
 # Contributing
 
-Use Python 3.11+, a virtual environment and `python -m pip install -e ".[dev,all]"`.
-Run `python -m pytest -q`, `python -m ruff check .` and `python -m build` before a pull request.
+Use Python 3.11+, a virtual environment and `python -m pip install -e ".[dev,all,docs]"`.
+Run `python -m pytest -q`, `python -m ruff check .`, `python -m build` and
+`mkdocs build --strict` before a pull request. User-facing changes need a docs update in
+`docs/` and a `CHANGELOG.md` entry under Unreleased.
+
+To release: bump `version` in `pyproject.toml`, move Unreleased entries under the new
+version in `CHANGELOG.md`, merge, then publish a GitHub release tagged `vX.Y.Z`. The
+release workflow builds, checks and publishes to PyPI.
 
 Keep policy, risk, approval, execution, verification and audit separate. Adapters only
 translate/dispatch; security decisions belong in the shared Guard pipeline. Add regression

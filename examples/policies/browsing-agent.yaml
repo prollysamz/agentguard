@@ -1,0 +1,24 @@
+# Browsing/research agent: reads an allowlist of sites, saves notes to ./downloads,
+# never sends credentials anywhere. Pair fetch tools with NetworkExecutor for
+# HTTPS-only GETs with private-address rejection.
+version: 1
+defaults:
+  effect: deny
+rules:
+  - capability: network.request
+    sensitive_data: [api_key, password, ssh_key, jwt, database_url]
+    effect: deny
+  - capability: network.request
+    domains: ["en.wikipedia.org", "docs.python.org", "*.readthedocs.io", "arxiv.org"]
+    effect: allow
+  - capability: filesystem.write
+    paths: ["./downloads/**"]
+    effect: allow
+  - capability: filesystem.read
+    paths: ["./downloads/**"]
+    effect: allow
+  - capability: message.send
+    effect: ask
+limits:
+  max_calls_per_minute: 60
+  max_recipients_per_action: 1

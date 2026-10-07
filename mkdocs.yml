@@ -1,0 +1,74 @@
+site_name: AgentGuard
+site_description: Open-source safety layer for AI agent tool calls
+site_url: https://prollysamz.github.io/agentguard/
+repo_url: https://github.com/prollysamz/agentguard
+repo_name: prollysamz/agentguard
+edit_uri: edit/main/docs/
+copyright: MIT License
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Concepts: concepts.md
+  - Guides:
+      - Registering tools: tools.md
+      - Policies: policy.md
+      - Policy templates: templates.md
+      - Approval: approval.md
+      - Controlled execution: execution.md
+      - Audit log: audit.md
+      - Gemma agent and judge: gemma.md
+  - Integrations:
+      - LangChain and LangGraph: integrations/langchain.md
+      - OpenAI Agents SDK: integrations/openai-agents.md
+      - Google ADK: integrations/adk.md
+      - MCP: integrations/mcp.md
+      - Plain Python: integrations/python.md
+  - Reference:
+      - CLI: cli.md
+      - Public API: api.md
+      - Threat model: security.md
+      - Changelog: changelog.md
+
+validation:
+  links:
+    not_found: warn
+    anchors: warn

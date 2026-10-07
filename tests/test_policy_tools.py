@@ -1,4 +1,6 @@
 import json
+import runpy
+from pathlib import Path
 
 import pytest
 
@@ -110,3 +112,35 @@ def test_cli_explain(tmp_path, capsys):
     assert main([*argv, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["hard_deny"] is True
     assert main(["explain", str(policy), "shell.execute", "--arg", "oops"]) == 1
+
+
+EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+
+
+@pytest.mark.parametrize(
+    "path", sorted(EXAMPLES.rglob("*.yaml")), ids=lambda p: p.relative_to(EXAMPLES).as_posix()
+)
+def test_example_policies_are_valid(path, capsys):
+    assert main(["check-policy", str(path)]) == 0
+
+
+def test_quickstart_runs(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    runpy.run_path(str(EXAMPLES / "quickstart.py"), run_name="__main__")
+    output = capsys.readouterr().out
+    assert "hello from the workspace" in output
+    assert "Denied read_file" in output and "Sensitive credential" in output
+    assert "Denied run" in output
+    assert main(["verify-log", "--audit", str(tmp_path / "quickstart-audit.jsonl")]) == 0
+
+
+def test_support_template_refund_needs_ordinary_approval(tmp_path):
+    for environment in ("development", "production"):
+        result = explain(
+            EXAMPLES / "policies" / "support-agent.yaml",
+            "payments.refund",
+            {"order_id": "o-1"},
+            working_directory=str(tmp_path),
+            environment=environment,
+        )
+        assert result["decision"] == "ask" and not result["strong_approval"]

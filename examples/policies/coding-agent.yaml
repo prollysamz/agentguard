@@ -1,0 +1,36 @@
+# Coding agent: works inside ./workspace, runs allowlisted commands, asks before
+# deleting or touching the remote. Pair shell tools with ShellExecutor so only exact,
+# administrator-approved commands can run.
+version: 1
+defaults:
+  effect: deny
+rules:
+  - capability: filesystem.read
+    paths: ["./workspace/**"]
+    effect: allow
+  - capability: filesystem.write
+    paths: ["./workspace/**"]
+    effect: allow
+  - capability: filesystem.delete
+    paths: ["./workspace/**"]
+    effect: ask
+  - capability: shell.execute
+    environment: production
+    effect: ask
+  - capability: shell.execute
+    effect: allow
+  - capability: repository.write
+    effect: ask
+  - capability: network.request
+    domains: ["docs.python.org", "pypi.org", "*.github.com"]
+    effect: allow
+  - capability: network.request
+    sensitive_data: [api_key, password, ssh_key, jwt, database_url]
+    effect: deny
+risk:
+  ask: 51
+  strong: 76
+  deny: 91
+limits:
+  max_calls_per_minute: 120
+  max_argument_bytes: 262144

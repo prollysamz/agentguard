@@ -1,0 +1,40 @@
+# Customer-support agent: reads the CRM freely, updates it, replies to one customer at
+# a time, and needs a human for refunds. Custom capabilities declare their own risk.
+version: 1
+defaults:
+  effect: deny
+capabilities:
+  crm.read:
+    risk: 10
+    description: Look up customers, orders and tickets
+  crm.update:
+    risk: 35
+    description: Change ticket status, tags and notes
+  payments.refund:
+    risk: 70
+    outbound: true
+    description: Refund an order to the original payment method
+rules:
+  - capability: crm.read
+    effect: allow
+  - capability: crm.update
+    effect: allow
+  - capability: payments.refund
+    environment: production
+    effect: ask
+  - capability: payments.refund
+    effect: allow
+  - capability: email.send
+    sensitive_data: [api_key, password, jwt, database_url]
+    effect: deny
+  - capability: email.send
+    effect: allow
+risk:
+  # Customer replies (email.send, baseline 55) proceed; refunds (70, or 85 in
+  # production) need ordinary human approval.
+  ask: 60
+  strong: 90
+  deny: 97
+limits:
+  max_calls_per_minute: 60
+  max_recipients_per_action: 1
