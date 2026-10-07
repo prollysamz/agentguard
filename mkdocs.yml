@@ -53,6 +53,8 @@ nav:
       - Policies: policy.md
       - Policy templates: templates.md
       - Approval: approval.md
+      - Dashboard: dashboard.md
+      - Sessions and rate limits: sessions.md
       - Controlled execution: execution.md
       - Audit log: audit.md
       - Gemma agent and judge: gemma.md

@@ -7,8 +7,9 @@ These names are the supported API. Everything else is internal and may change be
 
 | Name | Kind | Purpose |
 | --- | --- | --- |
-| `Guard(policy, audit="agentguard.jsonl", *, mode, agent_id, context, approval, approval_timeout, judge)` | class | The interception point. See below. |
+| `Guard(policy, audit="agentguard.jsonl", *, mode, agent_id, context, approval, approval_timeout, judge, rate_limiter)` | class | The interception point. `audit` is a path or an `AuditLogger`. See below. |
 | `GuardDenied` | exception | A call was denied; `.decision` holds the details |
+| `ApprovalPending` | exception | A `GuardDenied` for a call queued for a human; `.request_id` |
 | `GuardError` | exception | Infrastructure or execution failure; base of `GuardDenied` |
 | `Decision` | dataclass | `effect`, `policy_result`, `risk_score`, `reasons`, `strong_approval` |
 | `Effect` | enum | `ALLOW`, `ASK`, `DENY` |
@@ -24,6 +25,8 @@ These names are the supported API. Everything else is internal and may change be
 | --- | --- |
 | `tool(*, capability, name, sandboxed, executor, verifier, path_arg, url_arg, command_arg, content_arg, recipient_args)` | Decorator that registers a tool |
 | `call(name, arguments)` / `await acall(name, arguments)` | Dispatch by name |
+| `new_session(agent_id=None)` | A `Session` with `call`, `acall`, `with` binding, `state`, `summary` |
+| `default_session` | The session used when none is bound |
 | `tools` | Registered tool names |
 | `capabilities` | Built-in plus policy-declared capabilities |
 | `summary` | Count of evaluated decisions by effect |
@@ -36,7 +39,14 @@ Constructor options: `mode` is `"enforce"` or `"dry-run"`; `context` is
 
 | Module | Names |
 | --- | --- |
-| `agentguard.approval` | `Approval`, `ApprovalProvider`, `CLIApproval` |
+| `agentguard.approval` | `Approval`, `ApprovalProvider`, `ApprovalStore`, `QueueApproval`, `CLIApproval`, `SlackNotifier`, `WebhookNotifier` |
+| `agentguard.approval.webhook` | `verify_signature` |
+| `agentguard.audit.logger` | `AuditLogger` |
+| `agentguard.audit.export` | `LoggingExporter`, `HttpExporter` |
+| `agentguard.audit.reader` | `read_log` |
+| `agentguard.audit.report` | `build_report`, `format_report` |
+| `agentguard.core.ratelimit` | `LocalRateLimiter`, `RedisRateLimiter` |
+| `agentguard.dashboard.app` | `create_app` |
 | `agentguard.execution` | `FilesystemExecutor`, `ShellExecutor`, `NetworkExecutor`, `WorkspaceVerifier` |
 | `agentguard.adapters.langchain` | `guarded_tool`, `from_guarded` |
 | `agentguard.adapters.openai_agents` | `guarded_tool`, `from_guarded` |

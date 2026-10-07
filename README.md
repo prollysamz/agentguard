@@ -102,18 +102,39 @@ servers use `agentguard.adapters.mcp.register_tool`; any other loop can call
 | --- | --- |
 | **Policy as code** | YAML allow / ask / deny rules by capability, path, domain, environment and secrets. Explicit denies win. [Custom capabilities](https://prollysamz.github.io/agentguard/policy/#custom-capabilities) like `db.query` or `payments.refund`. |
 | **Risk checks** | Explainable 0–100 scores. Credential files, destructive commands and exfiltration after a secret was seen are always denied. |
-| **Human approval** | Risky calls wait for a person. No answer, a timeout or a broken approver means deny. |
+| **Human approval** | Risky calls go to a person in the dashboard, Slack or your own system without blocking the agent; grants like "allow this tool for 10 minutes". No answer means deny. |
 | **Controlled execution** | Executors confine files to a root and reject links, run only allowlisted commands, and allow only HTTPS GETs to listed domains. |
 | **Verification** | Before/after hashes catch tools that change files they were not asked to. |
-| **Audit** | Every stage of every call in a SHA-256 hash chain, with `logs`, `inspect` and `verify-log`. |
+| **Audit** | Every stage of every call in a signed SHA-256 hash chain with rotation, exported to OpenTelemetry or a SIEM. |
+| **Dashboard** | Approval queue, audit log viewer and a dry-run policy report. |
+| **Multi-agent** | Parallel per-agent sessions; rate limits per session, agent or globally through Redis. |
 | **Gemma** | A local Gemma agent for the demo, and an optional judge that can only add caution. |
 
 Starter policies for [coding, browsing and support agents](examples/policies/) are in
 `examples/policies/`.
 
+## Operate it
+
+```sh
+pip install "agentguard-oss[dashboard]"
+agentguard approvers add alice            # prints a token for the dashboard and API
+agentguard dashboard                      # http://127.0.0.1:8765
+```
+
+```python
+from agentguard.approval import ApprovalStore, QueueApproval
+
+guard = Guard("policy.yaml", approval=QueueApproval(ApprovalStore("agentguard-approvals.db")))
+```
+
+Risky calls raise `ApprovalPending` immediately instead of blocking; the agent retries after
+a human approves in the [dashboard](https://prollysamz.github.io/agentguard/dashboard/), in
+Slack, or through the API. Run a new agent with `mode="dry-run"` and check
+`agentguard report --dry-run-only` to tune the policy before enforcing it.
+
 ## Status
 
-AgentGuard 0.2 is alpha and has not had an independent security audit. It is an
+AgentGuard 0.3 is alpha and has not had an independent security audit. It is an
 interception layer for cooperative applications, not an OS sandbox: an agent that also has
 unguarded tools, a raw shell or Python `exec` can go around it. Read the
 [threat model](THREAT_MODEL.md) before guarding privileged tools, and report

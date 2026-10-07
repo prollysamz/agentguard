@@ -83,6 +83,8 @@ roles. See [Registering tools](tools.md).
 
 ## Sessions
 
-Each `Guard` is one session with its own ID, rate limit (`max_calls_per_minute`), taint
-state and halt flag. Calls in one Guard are serialized. Tools may make nested guarded
-calls; they run inline and are checked and audited like any other call.
+A session is one agent run: its own lock, rate window, taint state and halt flag. A Guard
+starts with a default session; `guard.new_session(agent_id=...)` creates more, which share
+the Guard's tools, policy, audit and approval and run in parallel. Calls within one session
+are serialized. Tools may make nested guarded calls; they run inline and are checked and
+audited like any other call. See [Sessions and rate limits](sessions.md).

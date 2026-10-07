@@ -23,10 +23,10 @@ object. Policy/configuration should not be writable through agent tools.
 | Unauthorized file access | Canonical path matching; confined filesystem executor | Symlink/hardlink/mount races require OS isolation |
 | Unapproved communication | Domain rules, approval, bounded HTTPS executor | DNS rebinding between preflight and connection is not prevented |
 | Privilege escalation | Dangerous-command rules, restrictive runner | Host privileges remain available to trusted tool implementations |
-| Excessive use | Session call rate, request/output sizes, command timeouts | No distributed/global budgets, custom-tool timeout, token/cost accounting or hard child-process limits |
+| Excessive use | Per-session, per-agent or global call rates (Redis for multiple processes), request/output sizes, command timeouts | Fixed-window Redis limits allow boundary bursts; no custom-tool timeout, token/cost accounting or hard child-process limits |
 | Unexpected modifications | Optional workspace hash verifier; halt on failure | Cannot undo effects or observe transient, network, metadata or out-of-root changes |
-| Approval failure or replay | One request per action, bounded wait, no cached grants | Trusted custom providers must authenticate humans and stop their own timed-out work |
-| Audit manipulation | Hash chain, file lock, verification and fsync | No signatures/external anchor; rewriting or truncating a chain can be undetectable |
+| Approval failure or replay | Token-authenticated approvers (hashed), grants bound to agent, environment and scope with expiry, signed Slack/webhook traffic, CSRF-protected dashboard | A stolen approver token can approve until removed; grants widen what runs without asking; custom providers must authenticate humans themselves |
+| Audit manipulation | Hash chain, checkpoint, file lock, fsync, optional HMAC signatures, export off-host | Without a signing key, a fully rewritten chain and checkpoint is undetectable; a key holder can forge; deleting all copies is not prevented |
 
 ## Fail-closed behavior
 
@@ -73,8 +73,17 @@ Concurrent legitimate writers can cause verification failures; use an isolated w
 The audit boundary begins at Guard dispatch; requests rejected by a framework before
 dispatch are not seen. Audit logs omit full results and raw exception text. Sensitive-data
 patterns are heuristic, so logs and exception causes still require controlled access.
-External anchoring, retention controls, key management and authenticated operator identity
-belong to the deployment. An empty or consistently rewritten chain is not proof of history.
+Signing keys, retention controls and off-host copies (exporters) belong to the deployment.
+Appends check only the checkpoint and the last event; full verification catches older edits.
+An empty or consistently rewritten unsigned chain is not proof of history.
+
+## Approvals and the dashboard
+
+Approver tokens are bearer credentials: store them like passwords and remove approvers who
+leave. The dashboard requires an approver for every page, uses HttpOnly SameSite=Strict
+session cookies, a CSRF header for writes and a strict Content-Security-Policy, and binds to
+localhost by default. Expose it only behind HTTPS with `--secure-cookies`. Grants trade
+interruptions for exposure: prefer `once` and short durations for high-risk tools.
 
 ## Non-goals
 

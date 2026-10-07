@@ -97,9 +97,10 @@ available on the built-in filesystem and network capabilities.
 
 | Limit | Default | Effect |
 | --- | --- | --- |
-| `max_calls_per_minute` | 120 | Per Guard session; further calls are denied |
+| `max_calls_per_minute` | 120 | Calls per minute per `rate_limit_scope`; further calls are denied |
 | `max_argument_bytes` | 65536 | JSON size of one call's arguments |
 | `max_recipients_per_action` | 10 | Total across all recipient fields of an email/message tool |
+| `rate_limit_scope` | `session` | Who shares `max_calls_per_minute`: `session`, `agent` or `global`. See [Sessions and rate limits](sessions.md) |
 
 ## Checking and debugging
 

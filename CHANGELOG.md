@@ -6,9 +6,44 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-08
+
+### Added
+- Queued approvals that do not block the agent: `ApprovalStore` (SQLite, shared by agents and
+  the dashboard) and `QueueApproval`. An `ask` call raises `ApprovalPending` with a request
+  ID; retrying after approval runs it. Identical pending calls share one request, and
+  recently rejected calls are denied without asking again. `wait=` waits inside the call.
+- Grants: approve once, the same call, a tool or a capability for 1 minute to 24 hours,
+  bound to agent and environment, revocable.
+- Token-authenticated approvers (hashed), with strong approval for `--strong` approvers who
+  re-enter their token. `agentguard approvers add/list/remove`, `agentguard approvals list`.
+- Slack notifications with approve/allow/reject buttons (signature-verified clicks) and
+  HMAC-signed webhooks (`verify_signature`).
+- `agentguard dashboard` (extra `dashboard`): approval queue, grants, audit log viewer with
+  search and timelines, and policy report; token login, CSRF protection, strict CSP, and a
+  JSON API with Bearer tokens.
+- `agentguard report` and `build_report`: what was asked about or denied, by tool and
+  reason, for tuning a policy from dry-run sessions.
+- Audit checkpoint (`.head`) so appends no longer re-read the log; rotation (`max_bytes`)
+  with the chain continuing across segments; HMAC signing (`signing_key`, `--key-env`);
+  `LoggingExporter` (OpenTelemetry, syslog) and `HttpExporter` (Splunk HEC, collectors).
+- Sessions: `guard.new_session(agent_id=...)` with its own lock, rate window, taint and halt
+  state; sessions run in parallel. `with session:` binds tools in a context.
+- Pluggable rate limiting: `LocalRateLimiter` and `RedisRateLimiter` (extra `redis`), with
+  policy `limits.rate_limit_scope` of `session`, `agent` or `global`.
+
+### Changed
+- `max_calls_per_minute` is enforced per `rate_limit_scope` (default `session`, as before).
+- Audit events may carry `signature`; it is excluded from the event hash.
+- CLI errors outside `demo` no longer suggest checking the model service.
+
+### Fixed
+- Credential paths after `@` or `=` (`curl -d @.env`, `--file=.env`) are hard-denied.
+
 ## [0.2.0] - 2026-10-08
 
-First release on PyPI, as `agentguard-oss` (`import agentguard`).
+Renamed the distribution to `agentguard-oss` (`import agentguard`) and prepared PyPI
+publishing.
 
 ### Added
 - Argument roles: `guard.tool(path_arg=, url_arg=, command_arg=, content_arg=,
@@ -50,6 +85,7 @@ Initial source release: policy as code, deterministic risk scoring, CLI approval
 controlled executors, workspace verification, hash-chained audit log, MCP adapter,
 and the prompt-injection demo with an optional local Gemma agent and judge.
 
-[Unreleased]: https://github.com/prollysamz/agentguard/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/prollysamz/agentguard/compare/8a0f847...v0.2.0
+[Unreleased]: https://github.com/prollysamz/agentguard/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/prollysamz/agentguard/compare/971b8bd...v0.3.0
+[0.2.0]: https://github.com/prollysamz/agentguard/compare/8a0f847...971b8bd
 [0.1.0]: https://github.com/prollysamz/agentguard/commit/8a0f847

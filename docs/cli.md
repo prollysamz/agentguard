@@ -46,13 +46,38 @@ agentguard demo [--model MODEL | --scripted] [--judge] [--interactive] [--audit 
 
 Runs the prompt-injection demo in a temporary directory. See [Gemma](gemma.md).
 
-## logs, inspect, verify-log
+## logs, inspect, verify-log, report
 
 ```sh
 agentguard logs --audit FILE [--decision allow|ask|deny] [--risk low|medium|high|critical]
 agentguard inspect EVENT_ID --audit FILE
-agentguard verify-log --audit FILE
+agentguard verify-log --audit FILE [--key-env VAR]
+agentguard report --audit FILE [--dry-run-only] [--json]
 ```
 
-Each verifies the hash chain before printing. Risk bands: low 0–25, medium 26–50,
-high 51–90, critical 91–100. See [Audit log](audit.md).
+Each verifies every segment of the hash chain and the checkpoint before printing.
+`--key-env` names an environment variable holding the signing key, and also verifies event
+signatures. `report` groups calls that were asked about or denied by tool and reason. Risk
+bands: low 0–25, medium 26–50, high 51–90, critical 91–100. See [Audit log](audit.md).
+
+## approvers, approvals
+
+```sh
+agentguard approvers add NAME [--slack-user U0123] [--strong] [--store FILE]
+agentguard approvers list [--store FILE]
+agentguard approvers remove NAME [--store FILE]
+agentguard approvals list [--status pending|approved|rejected|expired] [--store FILE]
+```
+
+`add` prints the approver's token once. The default store is `agentguard-approvals.db`.
+See [Approval](approval.md).
+
+## dashboard
+
+```sh
+agentguard dashboard [--audit FILE] [--store FILE] [--host 127.0.0.1] [--port 8765]
+                     [--audit-key-env VAR] [--slack-signing-secret-env VAR] [--secure-cookies]
+```
+
+Serves the approvals, audit log and policy report UI. Needs `agentguard-oss[dashboard]`.
+See [Dashboard](dashboard.md).

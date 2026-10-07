@@ -31,10 +31,12 @@ def read_file(path: str) -> str:
 | --- | --- |
 | **Policy as code** | YAML rules allow, ask or deny by capability, path, domain, environment and secrets in arguments. Explicit denies always win. |
 | **Risk checks** | Explainable 0–100 scores. Credential files, destructive commands and exfiltration after a secret was seen are always denied. |
-| **Human approval** | Risky actions wait for a person. No answer, a timeout or a broken approver means deny. |
+| **Human approval** | Risky actions go to a person in the dashboard, Slack or your own system, without blocking the agent. Grants like "allow this tool for 10 minutes". No answer means deny. |
 | **Controlled execution** | Executors confine file access to a root, run only allowlisted commands, and allow only HTTPS GETs to listed domains. |
 | **Verification** | Before/after hashes catch tools that change files they were not asked to. |
-| **Audit** | Every stage of every call in a SHA-256 hash chain, verifiable with one command. |
+| **Audit** | Every stage of every call in a signed SHA-256 hash chain with rotation, exported to OpenTelemetry or your SIEM. |
+| **Dashboard** | Approval queue, audit log viewer and a dry-run policy report. |
+| **Multi-agent** | Parallel per-agent sessions and rate limits shared through Redis. |
 | **Integrations** | LangChain, LangGraph, OpenAI Agents SDK, Google ADK, MCP, plain Python. |
 | **Gemma** | A local Gemma agent for the demo, and an optional Gemma security judge that can only add caution. |
 
