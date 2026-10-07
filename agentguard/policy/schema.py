@@ -77,6 +77,8 @@ class Limits(StrictModel):
     max_calls_per_minute: int = Field(default=120, gt=0, strict=True)
     max_argument_bytes: int = Field(default=65536, gt=0, strict=True)
     max_recipients_per_action: int = Field(default=10, gt=0, strict=True)
+    # Who shares max_calls_per_minute: each session, each agent_id, or every caller.
+    rate_limit_scope: Literal["session", "agent", "global"] = "session"
 
 
 class Policy(StrictModel):

@@ -3,8 +3,7 @@ import contextvars
 import inspect
 import json
 import threading
-import time
-from collections import Counter, deque
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +18,7 @@ from agentguard.audit.logger import AuditLogger
 from agentguard.core.action import Action, Context
 from agentguard.core.context import SessionRiskContext
 from agentguard.core.decision import Decision, Effect, GuardDenied, GuardError
+from agentguard.core.ratelimit import LocalRateLimiter
 from agentguard.policy.engine import PolicyEngine
 from agentguard.policy.explain import combine
 from agentguard.policy.loader import load_policy
@@ -42,8 +42,13 @@ class Tool:
 
 RECIPIENT_FIELDS = ("to", "cc", "bcc", "recipient", "recipients")
 ROLE_ARGUMENTS = ("path", "url", "cmd", "content")
-# Guards whose call() is running in this context, so tools can make nested guarded calls.
-_ACTIVE_GUARDS = contextvars.ContextVar("agentguard_active_guards", default=frozenset())
+# Sessions whose call() is running in this context, so tools can make nested guarded calls.
+_ACTIVE_SESSIONS = contextvars.ContextVar("agentguard_active_sessions", default=frozenset())
+# Sessions bound with ``with guard.new_session(...)``, keyed by Guard.
+_BOUND_SESSIONS = contextvars.ContextVar("agentguard_bound_sessions", default=None)
+# Reset tokens for nested ``with session:`` blocks, kept per context (thread or task),
+# because one Session object may be entered from many threads at once.
+_BINDING_TOKENS = contextvars.ContextVar("agentguard_binding_tokens", default=())
 
 
 def _recipient_count(arguments, fields=RECIPIENT_FIELDS):
@@ -101,6 +106,47 @@ def _run_coroutine(coroutine):
         return pool.submit(context.run, asyncio.run, coroutine).result()
 
 
+class Session:
+    """One agent session: its own lock, rate window, taint and halt state.
+
+    Create with ``guard.new_session(agent_id=...)``. Calls on different sessions run in
+    parallel; calls within one session are serialized. ``with session:`` routes guarded
+    tools called in that context (threads and tasks started from it included) here.
+    """
+
+    def __init__(self, guard, agent_id):
+        self.guard = guard
+        self.id = "session_" + uuid4().hex
+        self.agent_id = agent_id
+        self.state = SessionRiskContext()
+        self.lock = threading.RLock()
+        self.counts = Counter()
+
+    @property
+    def summary(self):
+        return {effect.value: self.counts[effect.value] for effect in Effect}
+
+    def call(self, name, arguments):
+        with self:
+            return self.guard.call(name, arguments)
+
+    async def acall(self, name, arguments):
+        with self:
+            return await self.guard.acall(name, arguments)
+
+    def __enter__(self):
+        bound = dict(_BOUND_SESSIONS.get() or {})
+        bound[id(self.guard)] = self
+        token = _BOUND_SESSIONS.set(bound)
+        _BINDING_TOKENS.set((*_BINDING_TOKENS.get(), token))
+        return self
+
+    def __exit__(self, *exc):
+        *rest, token = _BINDING_TOKENS.get()
+        _BINDING_TOKENS.set(tuple(rest))
+        _BOUND_SESSIONS.reset(token)
+
+
 class Guard:
     def __init__(
         self,
@@ -113,6 +159,7 @@ class Guard:
         approval=None,
         approval_timeout=30.0,
         judge=None,
+        rate_limiter=None,
     ):
         if mode not in {"enforce", "dry-run"}:
             raise ValueError("mode must be enforce or dry-run")
@@ -121,21 +168,45 @@ class Guard:
         self.policy = load_policy(policy)
         self.engine = PolicyEngine(self.policy)
         self.audit = audit if isinstance(audit, AuditLogger) else AuditLogger(audit)
-        self.mode, self.agent_id = mode, agent_id
+        self.mode = mode
         self.context = Context.model_validate(context or {"working_directory": str(Path.cwd())})
         self.context = self.context.model_copy(
             update={
                 "working_directory": str(Path(self.context.working_directory).resolve(strict=True))
             }
         )
-        self.session_id = "session_" + uuid4().hex
-        self.session = SessionRiskContext()
         self.approval, self.approval_timeout, self.judge = approval, approval_timeout, judge
+        self.rate_limiter = rate_limiter or LocalRateLimiter()
         self._tools = {}
-        self._lock = threading.RLock()
-        self._marker = object()
-        self._calls = deque()
         self._counts = Counter()
+        self._counts_lock = threading.Lock()
+        self.default_session = Session(self, agent_id)
+
+    def new_session(self, agent_id=None):
+        """A new session sharing this Guard's tools, policy, audit, approval and judge."""
+        return Session(self, agent_id or self.default_session.agent_id)
+
+    def _current(self):
+        bound = _BOUND_SESSIONS.get()
+        return (bound or {}).get(id(self), self.default_session)
+
+    @property
+    def agent_id(self):
+        return self._current().agent_id
+
+    @property
+    def session_id(self):
+        return self._current().id
+
+    @property
+    def session(self):
+        """The current session's risk state (taint, denials, halt flag)."""
+        return self._current().state
+
+    def _count(self, session, effect):
+        with self._counts_lock:
+            self._counts[effect] += 1
+        session.counts[effect] += 1
 
     @property
     def capabilities(self):
@@ -149,6 +220,7 @@ class Guard:
 
     @property
     def summary(self):
+        """Evaluated decisions across all sessions."""
         return {effect.value: self._counts[effect.value] for effect in Effect}
 
     def tool(
@@ -207,7 +279,9 @@ class Guard:
                     bound.apply_defaults()
                     return dict(bound.arguments)
                 except TypeError:
-                    self._reject_malformed(tool_name, capability, "Invalid tool argument structure")
+                    self._reject_malformed(
+                        self._current(), tool_name, capability, "Invalid tool argument structure"
+                    )
 
             if inspect.iscoroutinefunction(function):
 
@@ -231,14 +305,14 @@ class Guard:
 
         return decorate
 
-    def _reject_malformed(self, tool, capability, reason):
+    def _reject_malformed(self, session, tool, capability, reason):
         decision = Decision(Effect.DENY, Effect.DENY, 100, (reason,))
-        self._counts["deny"] += 1
+        self._count(session, "deny")
         self.audit.append(
             {
                 "stage": "rejected",
-                "agent_id": self.agent_id,
-                "session_id": self.session_id,
+                "agent_id": session.agent_id,
+                "session_id": session.id,
                 "tool": str(tool)[:200],
                 "capability": capability,
                 "final_decision": "deny",
@@ -249,7 +323,7 @@ class Guard:
         )
         raise GuardDenied(decision)
 
-    def _normalize(self, name, arguments, tool):
+    def _normalize(self, session, name, arguments, tool):
         if type(arguments) is not dict:
             raise ValueError("Arguments must be a JSON object")
         # Enforce JSON transport semantics, bounded size, and no NaN/custom objects.
@@ -293,17 +367,17 @@ class Guard:
             if count > self.policy.limits.max_recipients_per_action:
                 raise ValueError("Too many recipients")
         return Action(
-            agent_id=self.agent_id,
-            session_id=self.session_id,
+            agent_id=session.agent_id,
+            session_id=session.id,
             tool=name,
             capability=cap,
             arguments=arguments,
             context=self.context,
         )
 
-    def _evaluate(self, action):
+    def _evaluate(self, session, action):
         policy_result, policy_reason = self.engine.evaluate(action)
-        risk = score(action, self.session, self.policy.capabilities)
+        risk = score(action, session.state, self.policy.capabilities)
         reasons = [policy_reason, *risk.reasons]
         judged = getattr(self.judge, "capabilities", None)
         if (
@@ -352,52 +426,65 @@ class Guard:
 
     async def acall(self, name, arguments):
         """Offload the serialized pipeline; cancellation cannot undo an executing tool."""
-        if self._marker in _ACTIVE_GUARDS.get():
-            # Nested inside one of this Guard's tools: run inline under the held lock.
+        if self._current() in _ACTIVE_SESSIONS.get():
+            # Nested inside one of this session's tools: run inline under the held lock.
             return self.call(name, arguments)
         return await asyncio.to_thread(self.call, name, arguments)
 
     def call(self, name, arguments):
-        if self._marker in _ACTIVE_GUARDS.get():
-            # A tool this Guard is executing made a nested call; the outer call holds the lock.
-            return self._dispatch(name, arguments)
-        with self._lock:
-            token = _ACTIVE_GUARDS.set(_ACTIVE_GUARDS.get() | {self._marker})
+        session = self._current()
+        if session in _ACTIVE_SESSIONS.get():
+            # A tool this session is executing made a nested call; the outer call holds the lock.
+            return self._dispatch(session, name, arguments)
+        with session.lock:
+            token = _ACTIVE_SESSIONS.set(_ACTIVE_SESSIONS.get() | {session})
             try:
-                return self._dispatch(name, arguments)
+                return self._dispatch(session, name, arguments)
             finally:
-                _ACTIVE_GUARDS.reset(token)
+                _ACTIVE_SESSIONS.reset(token)
 
-    def _dispatch(self, name, arguments):
+    def _rate_key(self, session):
+        scope = self.policy.limits.rate_limit_scope
+        return {"session": f"session:{session.id}", "agent": f"agent:{session.agent_id}"}.get(
+            scope, "global"
+        )
+
+    def _dispatch(self, session, name, arguments):
         if not isinstance(name, str) or name not in self._tools:
-            return self._reject_malformed(name, "unknown", "Unknown tool")
+            return self._reject_malformed(session, name, "unknown", "Unknown tool")
         tool = self._tools[name]
-        if self.session.halted:
+        if session.state.halted:
             return self._reject_malformed(
-                name, tool.capability, "Session halted after execution or verification failure"
+                session,
+                name,
+                tool.capability,
+                "Session halted after execution or verification failure",
             )
         try:
-            action = self._normalize(name, arguments, tool)
+            action = self._normalize(session, name, arguments, tool)
         except Exception:
             return self._reject_malformed(
-                name, tool.capability, "Invalid or oversized tool arguments"
+                session, name, tool.capability, "Invalid or oversized tool arguments"
             )
-        now = time.monotonic()
         evaluation_failed = False
-        while self._calls and self._calls[0] <= now - 60:
-            self._calls.popleft()
-        if len(self._calls) >= self.policy.limits.max_calls_per_minute:
-            decision = Decision(Effect.DENY, Effect.DENY, 100, ("Session tool rate limit reached",))
+        try:
+            within_limit = self.rate_limiter.hit(
+                self._rate_key(session), self.policy.limits.max_calls_per_minute, 60.0
+            )
+        except Exception:
+            within_limit, evaluation_failed = False, True
+        if not within_limit:
+            reason = "Rate limiter unavailable" if evaluation_failed else "Tool rate limit reached"
+            decision = Decision(Effect.DENY, Effect.DENY, 100, (reason,))
         else:
-            self._calls.append(now)
             try:
-                decision = self._evaluate(action)
+                decision = self._evaluate(session, action)
             except Exception:
                 evaluation_failed = True
                 decision = Decision(
                     Effect.DENY, Effect.DENY, 100, ("Policy or risk evaluation failed",)
                 )
-        self._counts[decision.effect.value] += 1
+        self._count(session, decision.effect.value)
         self._event(action, decision, "proposed", execution_status="not_executed")
         approval = Approval(False)
         allowed = decision.effect == Effect.ALLOW
@@ -407,7 +494,7 @@ class Guard:
             approval = request_bounded(self.approval, action, decision, self.approval_timeout)
             allowed = approval.approved
         if not allowed:
-            self.session.denied_actions.append(action.id)
+            session.state.denied_actions.append(action.id)
             reasons = decision.reasons
             if decision.effect == Effect.ASK:
                 reasons += ("Approval rejected, unavailable, insufficient, or timed out",)
@@ -451,12 +538,12 @@ class Guard:
                 if tool.verifier
                 else {"status": "not_configured"}
             )
-            self.session.sensitive_data_seen.update(detect_secrets(result))
-            self.session.cumulative_risk += decision.risk_score
+            session.state.sensitive_data_seen.update(detect_secrets(result))
+            session.state.cumulative_risk += decision.risk_score
             if action.capability.startswith("filesystem."):
-                self.session.files_accessed.append(action.arguments["path"])
+                session.state.files_accessed.append(action.arguments["path"])
             if action.capability == "network.request":
-                self.session.domains_contacted.append(urlsplit(action.arguments["url"]).hostname)
+                session.state.domains_contacted.append(urlsplit(action.arguments["url"]).hostname)
             self._event(
                 action,
                 decision,
@@ -469,7 +556,7 @@ class Guard:
             )
             return result
         except Exception as exc:
-            self.session.halted = True
+            session.state.halted = True
             # Avoid recording arbitrary exception strings which may contain credentials.
             self._event(
                 action,
