@@ -21,25 +21,33 @@ class Risk:
     hard_deny: bool = False
 
 
-def score(action: Action, session: SessionRiskContext) -> Risk:
+BASELINES = {
+    "filesystem.read": 5,
+    "filesystem.write": 28,
+    "filesystem.delete": 65,
+    "shell.execute": 40,
+    "network.request": 30,
+    "email.send": 55,
+    "message.send": 55,
+    "repository.write": 45,
+}
+OUTBOUND = frozenset({"network.request", "email.send", "message.send", "repository.write"})
+
+
+def score(action: Action, session: SessionRiskContext, custom=None) -> Risk:
+    """custom maps user-defined capability names to CapabilitySpec (risk, outbound)."""
     cap = action.capability
-    base = {
-        "filesystem.read": 5,
-        "filesystem.write": 28,
-        "filesystem.delete": 65,
-        "shell.execute": 40,
-        "network.request": 30,
-        "email.send": 55,
-        "message.send": 55,
-        "repository.write": 45,
-    }[cap]
+    spec = (custom or {}).get(cap)
+    base = BASELINES[cap] if cap in BASELINES else spec.risk
     reasons = [f"Capability baseline: {base}"]
     raw = json.dumps(action.arguments)
     command = str(action.arguments.get("cmd", action.arguments.get("command", "")))
     secrets = detect_secrets(action.arguments)
     # Pushes publish repository content, so they count as outbound for taint checks.
-    outbound = cap in {"network.request", "email.send", "message.send", "repository.write"} or bool(
-        EXTERNAL_COMMAND.search(command) or REMOTE_PUSH.search(command)
+    outbound = (
+        cap in OUTBOUND
+        or bool(spec and spec.outbound)
+        or bool(EXTERNAL_COMMAND.search(command) or REMOTE_PUSH.search(command))
     )
     if cap.startswith("filesystem."):
         # Check the requested path and its link-resolved target.

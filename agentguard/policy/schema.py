@@ -1,3 +1,4 @@
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -5,9 +6,19 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from agentguard.core.action import CAPABILITIES
 from agentguard.core.decision import Effect
 
+CAPABILITY_NAME = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class CapabilitySpec(StrictModel):
+    """A user-defined capability, declared in the policy so rules can reference it."""
+
+    risk: int = Field(ge=0, le=100, strict=True)
+    outbound: bool = Field(default=False, strict=True)
+    description: str = Field(default="", max_length=500)
 
 
 class Rule(StrictModel):
@@ -22,8 +33,7 @@ class Rule(StrictModel):
 
     @model_validator(mode="after")
     def validate_rule(self):
-        if self.capability not in CAPABILITIES:
-            raise ValueError("Unsupported capability")
+        # Whether the capability exists is checked by Policy, which knows custom ones.
         if self.paths and not self.capability.startswith("filesystem."):
             raise ValueError("paths requires filesystem capability")
         if self.paths:
@@ -72,6 +82,24 @@ class Limits(StrictModel):
 class Policy(StrictModel):
     version: Literal[1]
     defaults: Defaults = Field(default_factory=Defaults)
+    capabilities: dict[str, CapabilitySpec] = Field(default_factory=dict)
     rules: list[Rule]
     risk: RiskThresholds = Field(default_factory=RiskThresholds)
     limits: Limits = Field(default_factory=Limits)
+
+    @model_validator(mode="after")
+    def validate_capabilities(self):
+        for name in self.capabilities:
+            if name in CAPABILITIES:
+                raise ValueError(f"Cannot redefine built-in capability {name}")
+            if not CAPABILITY_NAME.match(name):
+                raise ValueError(f"Capability names look like area.action, got {name!r}")
+        known = CAPABILITIES | set(self.capabilities)
+        for index, rule in enumerate(self.rules, 1):
+            if rule.capability not in known:
+                raise ValueError(f"Rule {index}: unknown capability {rule.capability!r}")
+        return self
+
+    @property
+    def all_capabilities(self) -> frozenset[str]:
+        return CAPABILITIES | frozenset(self.capabilities)

@@ -6,7 +6,7 @@ import threading
 import time
 from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import get_type_hints
 from urllib.parse import urlsplit
@@ -16,7 +16,7 @@ from pydantic import TypeAdapter
 
 from agentguard.approval.base import Approval, request_bounded
 from agentguard.audit.logger import AuditLogger
-from agentguard.core.action import CAPABILITIES, Action, Context
+from agentguard.core.action import Action, Context
 from agentguard.core.context import SessionRiskContext
 from agentguard.core.decision import Decision, Effect, GuardDenied, GuardError
 from agentguard.policy.engine import PolicyEngine
@@ -34,22 +34,59 @@ class Tool:
     capability: str
     executor: object = None
     verifier: object = None
+    # Canonical argument name ("path", "url", "cmd", "content") -> the tool's parameter.
+    roles: dict = field(default_factory=dict)
+    recipients: tuple = ()
 
 
 RECIPIENT_FIELDS = ("to", "cc", "bcc", "recipient", "recipients")
+ROLE_ARGUMENTS = ("path", "url", "cmd", "content")
 # Guards whose call() is running in this context, so tools can make nested guarded calls.
 _ACTIVE_GUARDS = contextvars.ContextVar("agentguard_active_guards", default=frozenset())
 
 
-def _recipient_count(arguments):
+def _recipient_count(arguments, fields=RECIPIENT_FIELDS):
     count = 0
-    for key in RECIPIENT_FIELDS:
+    for key in fields:
         value = arguments.get(key)
         if value is None:
             continue
         items = value if isinstance(value, list) else str(value).replace(";", ",").split(",")
         count += sum(1 for item in items if str(item).strip())
     return count
+
+
+def _argument_roles(capability, parameters, mapped, recipient_args):
+    """Validate role mappings at registration so misconfigured tools fail early."""
+    roles = {}
+    for canonical, parameter in mapped.items():
+        if parameter is None or parameter == canonical:
+            continue
+        if parameter not in parameters:
+            raise ValueError(f"{canonical} argument {parameter!r} is not a tool parameter")
+        if canonical in parameters:
+            raise ValueError(f"Cannot map {parameter!r} to {canonical!r}: both are parameters")
+        roles[canonical] = parameter
+
+    def has(canonical):
+        return canonical in roles or canonical in parameters
+
+    if capability.startswith("filesystem.") and not has("path"):
+        raise ValueError("Filesystem tools need a path parameter; set path_arg=")
+    if capability == "network.request" and not has("url"):
+        raise ValueError("Network tools need a url parameter; set url_arg=")
+    if capability in {"shell.execute", "repository.write"} and not (
+        has("cmd") or "command" in parameters
+    ):
+        raise ValueError("Command tools need a cmd or command parameter; set command_arg=")
+    if recipient_args is None:
+        recipients = tuple(f for f in RECIPIENT_FIELDS if f in parameters)
+    else:
+        recipients = tuple(recipient_args)
+        missing = [f for f in recipients if f not in parameters]
+        if missing:
+            raise ValueError(f"Recipient arguments are not tool parameters: {missing}")
+    return roles, recipients
 
 
 def _run_coroutine(coroutine):
@@ -100,6 +137,11 @@ class Guard:
         self._counts = Counter()
 
     @property
+    def capabilities(self):
+        """Built-in capabilities plus any the policy declares."""
+        return self.policy.all_capabilities
+
+    @property
     def tools(self):
         """Registered tool names, for building model-facing tool lists and schemas."""
         return tuple(self._tools)
@@ -108,9 +150,26 @@ class Guard:
     def summary(self):
         return {effect.value: self._counts[effect.value] for effect in Effect}
 
-    def tool(self, *, capability, name=None, sandboxed=False, executor=None, verifier=None):
-        if capability not in CAPABILITIES:
-            raise ValueError("Unsupported capability")
+    def tool(
+        self,
+        *,
+        capability,
+        name=None,
+        sandboxed=False,
+        executor=None,
+        verifier=None,
+        path_arg=None,
+        url_arg=None,
+        command_arg=None,
+        content_arg=None,
+        recipient_args=None,
+    ):
+        """Register a tool. *_arg name the parameter that plays each role when it is not
+        called path, url, cmd/command or content; recipient_args lists recipient fields."""
+        if capability not in self.capabilities:
+            raise ValueError(
+                f"Unsupported capability {capability!r}; declare custom ones in the policy"
+            )
         if sandboxed and executor is None:
             raise ValueError("sandboxed=True requires an explicit controlled executor")
         if executor is not None and capability not in executor.capabilities:
@@ -131,8 +190,14 @@ class Guard:
                 if key not in hints:
                     raise ValueError(f"Missing type annotation: {key}")
                 validators[key] = TypeAdapter(hints[key])
+            roles, recipients = _argument_roles(
+                capability,
+                signature.parameters,
+                {"path": path_arg, "url": url_arg, "cmd": command_arg, "content": content_arg},
+                recipient_args,
+            )
             self._tools[tool_name] = Tool(
-                function, signature, validators, capability, executor, verifier
+                function, signature, validators, capability, executor, verifier, roles, recipients
             )
 
             def normalize_args(args, kwargs):
@@ -197,6 +262,9 @@ class Guard:
             key: tool.validators[key].validate_python(value, strict=True)
             for key, value in bound.arguments.items()
         }
+        # Present role arguments under canonical names to policy, risk and executors.
+        for canonical, parameter in tool.roles.items():
+            arguments[canonical] = arguments.pop(parameter)
         cap = tool.capability
         if cap.startswith("filesystem."):
             # Policy and risk match the resolved target; execution gets the requested path.
@@ -220,7 +288,8 @@ class Guard:
             if type(command) is not str or not command.strip() or "\x00" in command:
                 raise ValueError("Missing or invalid command")
         if cap in {"email.send", "message.send"}:
-            if _recipient_count(arguments) > self.policy.limits.max_recipients_per_action:
+            count = _recipient_count(arguments, tool.recipients)
+            if count > self.policy.limits.max_recipients_per_action:
                 raise ValueError("Too many recipients")
         return Action(
             agent_id=self.agent_id,
@@ -233,7 +302,7 @@ class Guard:
 
     def _evaluate(self, action):
         policy_result, policy_reason = self.engine.evaluate(action)
-        risk = score(action, self.session)
+        risk = score(action, self.session, self.policy.capabilities)
         reasons = [policy_reason, *risk.reasons]
         judged = getattr(self.judge, "capabilities", None)
         if (
@@ -374,7 +443,9 @@ class Guard:
             if tool.executor is not None:
                 result = tool.executor.execute(execution_action)
             else:
-                result = tool.function(**execution_action.arguments)
+                result = tool.function(
+                    **{tool.roles.get(k, k): v for k, v in execution_action.arguments.items()}
+                )
                 if inspect.isawaitable(result):
                     result = _run_coroutine(result)
             self._event(
