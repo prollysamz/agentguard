@@ -1,8 +1,9 @@
 import re
 
+# Credential locations. "@" and "=" cover file arguments like curl -d @.env or --file=.env.
 SENSITIVE_PATH = re.compile(
-    r"(?i)(?:^|[/\\\s\"'])(?:\.ssh|\.aws|\.gnupg|\.kube)(?:[/\\\s\"']|$)"
-    r"|(?:^|[/\\\s\"'])\.env(?:[.\s\"']|$)|id_(?:rsa|ed25519)|/etc/(?:shadow|passwd)"
+    r"(?i)(?:^|[/\\\s\"'@=])(?:\.ssh|\.aws|\.gnupg|\.kube)(?:[/\\\s\"']|$)"
+    r"|(?:^|[/\\\s\"'@=])\.env(?:[.\s\"']|$)|id_(?:rsa|ed25519)|/etc/(?:shadow|passwd)"
 )
 DANGEROUS_COMMANDS = [
     (

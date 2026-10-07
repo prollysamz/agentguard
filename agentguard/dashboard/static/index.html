@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentGuard Dashboard</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z" fill="currentColor" opacity=".18"/>
+        <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm-1.2 13.6-3.4-3.4 1.4-1.4 2 2 4.6-4.6 1.4 1.4-6 6Z" fill="currentColor"/>
+      </svg>
+      <span>AgentGuard</span>
+    </div>
+    <nav class="tabs" id="tabs" hidden>
+      <button type="button" data-tab="approvals" aria-current="page">Approvals <span class="count" id="pending-count" hidden></span></button>
+      <button type="button" data-tab="log">Audit log</button>
+      <button type="button" data-tab="report">Policy report</button>
+    </nav>
+    <div class="who" id="who" hidden>
+      <span id="who-name"></span>
+      <button type="button" class="link" id="logout">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="login" class="login" hidden>
+      <h1>Sign in</h1>
+      <p class="muted">Use the approver token from <code>agentguard approvers add</code>.</p>
+      <form id="login-form" class="stack">
+        <label for="token">Approver token</label>
+        <input id="token" name="token" type="password" autocomplete="off" required placeholder="agt_…">
+        <button type="submit" class="primary">Sign in</button>
+        <p class="error" id="login-error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="view-approvals" class="view" hidden>
+      <div class="section-head">
+        <h1>Waiting for approval</h1>
+        <span class="muted small" id="approvals-updated"></span>
+      </div>
+      <div id="pending" class="cards"></div>
+      <h2>Active grants</h2>
+      <div id="grants"></div>
+      <h2>Recent decisions</h2>
+      <div id="decided"></div>
+    </section>
+
+    <section id="view-log" class="view" hidden>
+      <div class="section-head">
+        <h1>Audit log</h1>
+        <span id="chain" class="badge"></span>
+      </div>
+      <form id="filters" class="filters">
+        <select name="decision" aria-label="Decision">
+          <option value="">Any decision</option>
+          <option value="allow">Allow</option>
+          <option value="ask">Ask</option>
+          <option value="deny">Deny</option>
+        </select>
+        <select name="stage" aria-label="Stage">
+          <option value="">Any stage</option>
+          <option>proposed</option><option>authorized</option><option>denied</option>
+          <option>observed</option><option>failed</option><option>rejected</option>
+        </select>
+        <input name="q" type="search" placeholder="Search tool, agent, arguments…" aria-label="Search">
+        <button type="submit">Filter</button>
+      </form>
+      <div class="table-wrap">
+        <table id="events">
+          <thead><tr><th>Time</th><th>Stage</th><th>Tool</th><th>Agent</th><th>Decision</th><th class="num">Risk</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager"><button type="button" id="more" hidden>Load more</button><span class="muted small" id="events-total"></span></div>
+    </section>
+
+    <section id="view-report" class="view" hidden>
+      <div class="section-head">
+        <h1>Policy report</h1>
+        <label class="toggle"><input type="checkbox" id="dry-only"> Dry-run calls only</label>
+      </div>
+      <p class="muted">What policy and risk would ask about or block. Run an agent with
+        <code>mode="dry-run"</code> on a safe workload to tune a policy before enforcing it.</p>
+      <div class="tiles" id="tiles"></div>
+      <h2>Would be asked or denied</h2>
+      <div id="would-change"></div>
+      <h2>By tool</h2>
+      <div class="table-wrap"><table id="by-tool">
+        <thead><tr><th>Tool</th><th>Capability</th><th class="num">Allow</th><th class="num">Ask</th><th class="num">Deny</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+  </main>
+
+  <dialog id="detail">
+    <div class="dialog-head">
+      <h2>Event</h2>
+      <button type="button" class="link" id="detail-close">Close</button>
+    </div>
+    <ol class="timeline" id="timeline"></ol>
+    <pre id="detail-json"></pre>
+  </dialog>
+</body>
+</html>

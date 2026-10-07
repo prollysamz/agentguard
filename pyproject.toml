@@ -32,7 +32,8 @@ langchain = ["langchain-core>=1,<2"]
 openai-agents = ["openai-agents>=0.23,<1"]
 adk = ["google-adk>=2,<3"]
 redis = ["redis>=5,<9"]
-all = ["agentguard-oss[mcp,langchain,openai-agents,adk,redis]"]
+dashboard = ["starlette>=0.40,<2", "uvicorn>=0.30,<1"]
+all = ["agentguard-oss[mcp,langchain,openai-agents,adk,redis,dashboard]"]
 
 [project.urls]
 Homepage = "https://github.com/prollysamz/agentguard"

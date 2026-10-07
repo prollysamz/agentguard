@@ -20,7 +20,10 @@ def main(argv=None):
     inspect = sub.add_parser("inspect", help="Inspect one audit event")
     inspect.add_argument("event_id")
     verify = sub.add_parser("verify-log", help="Verify the JSONL hash chain")
-    for command in (logs, inspect, verify):
+    report = sub.add_parser("report", help="Summarize what policy asked about or denied")
+    report.add_argument("--dry-run-only", action="store_true", help="Only calls made in dry-run")
+    report.add_argument("--json", action="store_true", help="Print the report as JSON")
+    for command in (logs, inspect, verify, report):
         command.add_argument("--audit", default="agentguard.jsonl")
         command.add_argument(
             "--key-env",
@@ -64,6 +67,18 @@ def main(argv=None):
     requests.add_argument("--limit", type=int, default=50)
     for command in (add, remove, listing, requests):
         command.add_argument("--store", default="agentguard-approvals.db")
+    dashboard = sub.add_parser("dashboard", help="Serve the approvals and audit dashboard")
+    dashboard.add_argument("--audit", default="agentguard.jsonl")
+    dashboard.add_argument("--store", default="agentguard-approvals.db")
+    dashboard.add_argument("--host", default="127.0.0.1")
+    dashboard.add_argument("--port", type=int, default=8765)
+    dashboard.add_argument("--audit-key-env", metavar="VAR", help="Verify audit signatures")
+    dashboard.add_argument(
+        "--slack-signing-secret-env", metavar="VAR", help="Enable /slack/actions for buttons"
+    )
+    dashboard.add_argument(
+        "--secure-cookies", action="store_true", help="Mark cookies Secure (behind HTTPS)"
+    )
     demo = sub.add_parser("demo", help="Run the isolated prompt-injection demo")
     demo.add_argument("--audit", default="agentguard-demo.jsonl")
     source = demo.add_mutually_exclusive_group()
@@ -97,6 +112,8 @@ def main(argv=None):
                 judge_model = args.model or detected or gemma_agent.PREFERRED_MODEL
             run_demo(args.audit, model, judge_model, args.interactive)
             return 0
+        if args.command == "dashboard":
+            return serve_dashboard(args)
         if args.command in {"approvers", "approvals"}:
             return manage_approvals(args)
         if args.command == "check-policy":
@@ -109,6 +126,12 @@ def main(argv=None):
                 raise ValueError(f"Environment variable {args.key_env} is not set")
             key = os.environ[args.key_env].encode()
         events = read_log(args.audit, key)
+        if args.command == "report":
+            from agentguard.audit.report import build_report, format_report
+
+            result = build_report(events, dry_run_only=args.dry_run_only)
+            print(json.dumps(result, indent=2) if args.json else format_report(result))
+            return 0
         if args.command == "verify-log":
             segments = len(rotated_segments(Path(args.audit))) + 1
             detail = (
@@ -158,6 +181,43 @@ def _policy_errors(exc):
             lines.append(f"  {location}: {error['msg']}")
         return lines
     return [f"  {type(cause).__name__}: {cause}"]
+
+
+def _secret(variable):
+    if not variable:
+        return None
+    if not os.environ.get(variable):
+        raise ValueError(f"Environment variable {variable} is not set")
+    return os.environ[variable]
+
+
+def serve_dashboard(args):
+    try:
+        import uvicorn
+
+        from agentguard.dashboard.app import create_app
+    except ImportError:
+        print(
+            'Install the dashboard extra: pip install "agentguard-oss[dashboard]"', file=sys.stderr
+        )
+        return 1
+    key = _secret(args.audit_key_env)
+    app = create_app(
+        audit_path=args.audit,
+        store=args.store,
+        audit_key=key.encode() if key else None,
+        slack_signing_secret=_secret(args.slack_signing_secret_env),
+        secure_cookies=args.secure_cookies,
+    )
+    if args.host not in {"127.0.0.1", "localhost", "::1"} and not args.secure_cookies:
+        print(
+            "Warning: serving beyond localhost without --secure-cookies. Put the dashboard "
+            "behind HTTPS before exposing it.",
+            file=sys.stderr,
+        )
+    print(f"AgentGuard dashboard on http://{args.host}:{args.port}  (Ctrl+C to stop)")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    return 0
 
 
 def manage_approvals(args):
