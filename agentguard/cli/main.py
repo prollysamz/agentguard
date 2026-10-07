@@ -1,8 +1,11 @@
 import argparse
 import json
+import os
 import sys
+from pathlib import Path
 
 from agentguard.audit.reader import read_log
+from agentguard.audit.segments import rotated_segments
 from agentguard.core.decision import GuardError
 
 
@@ -19,6 +22,11 @@ def main(argv=None):
     verify = sub.add_parser("verify-log", help="Verify the JSONL hash chain")
     for command in (logs, inspect, verify):
         command.add_argument("--audit", default="agentguard.jsonl")
+        command.add_argument(
+            "--key-env",
+            metavar="VAR",
+            help="Environment variable holding the audit signing key; verifies signatures",
+        )
     check = sub.add_parser("check-policy", help="Validate a policy file and summarize it")
     check.add_argument("policy")
     explain = sub.add_parser(
@@ -77,10 +85,19 @@ def main(argv=None):
             return check_policy(args.policy)
         if args.command == "explain":
             return explain_call(args)
-        events = read_log(args.audit)
+        key = None
+        if args.key_env:
+            if not os.environ.get(args.key_env):
+                raise ValueError(f"Environment variable {args.key_env} is not set")
+            key = os.environ[args.key_env].encode()
+        events = read_log(args.audit, key)
         if args.command == "verify-log":
+            segments = len(rotated_segments(Path(args.audit))) + 1
+            detail = (
+                "signatures valid" if key else "unsigned check; pass --key-env to verify signatures"
+            )
             print(
-                f"Verified {len(events)} events; chain is consistent (no external integrity anchor)."
+                f"Verified {len(events)} events in {segments} segment(s); chain is consistent ({detail})."
             )
             return 0
         if args.command == "inspect":

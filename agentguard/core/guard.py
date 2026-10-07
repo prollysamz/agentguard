@@ -120,7 +120,7 @@ class Guard:
             raise ValueError("approval_timeout must be positive")
         self.policy = load_policy(policy)
         self.engine = PolicyEngine(self.policy)
-        self.audit = AuditLogger(audit)
+        self.audit = audit if isinstance(audit, AuditLogger) else AuditLogger(audit)
         self.mode, self.agent_id = mode, agent_id
         self.context = Context.model_validate(context or {"working_directory": str(Path.cwd())})
         self.context = self.context.model_copy(
