@@ -1,6 +1,6 @@
 # Contributing
 
-Use Python 3.11+, a virtual environment and `python -m pip install -e ".[dev,mcp]"`.
+Use Python 3.11+, a virtual environment and `python -m pip install -e ".[dev,all]"`.
 Run `python -m pytest -q`, `python -m ruff check .` and `python -m build` before a pull request.
 
 Keep policy, risk, approval, execution, verification and audit separate. Adapters only

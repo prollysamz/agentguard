@@ -37,7 +37,19 @@ before using it with privileged tools or untrusted workloads.
 
 ## Install and run
 
-Requires Python 3.11 or later. Clone [prollysamz/agentguard](https://github.com/prollysamz/agentguard):
+Requires Python 3.11 or later.
+
+```sh
+pip install agentguard-oss                    # core SDK and CLI
+pip install "agentguard-oss[langchain]"       # or [openai-agents], [adk], [mcp], [all]
+agentguard demo --scripted
+```
+
+The distribution is `agentguard-oss`; the import is `import agentguard`. Until the first
+PyPI release is published, install from GitHub instead:
+`pip install "agentguard-oss @ git+https://github.com/prollysamz/agentguard"`.
+
+To develop:
 
 ```sh
 git clone https://github.com/prollysamz/agentguard.git
@@ -45,14 +57,10 @@ cd agentguard
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 # macOS/Linux: source .venv/bin/activate
-python -m pip install -e ".[dev,mcp]"
+python -m pip install -e ".[dev,all]"
 agentguard demo
 agentguard verify-log --audit agentguard-demo.jsonl
 ```
-
-The distribution is named `agentguard-sdk`; the Python import is `agentguard`.
-This repository has not been published to PyPI. To use it as a dependency elsewhere:
-`pip install "agentguard-sdk @ git+https://github.com/prollysamz/agentguard"`.
 
 `agentguard demo` gives an agent a calculator to fix in disposable fixture files whose
 README carries a prompt injection asking it to steal `~/.ssh/id_rsa`. AgentGuard blocks
