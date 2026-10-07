@@ -5,6 +5,21 @@ from pydantic import BaseModel, ConfigDict
 from agentguard.core.decision import GuardError
 from agentguard.risk.gemma_judge import OllamaClient
 
+DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
+PREFERRED_MODEL = "gemma3:4b"
+
+
+def detect_gemma(endpoint=DEFAULT_ENDPOINT, timeout=2.0):
+    """Return an installed Gemma model name, or None if Ollama or Gemma is unavailable."""
+    try:
+        names = OllamaClient(PREFERRED_MODEL, endpoint, timeout).models()
+    except Exception:
+        return None
+    gemma = sorted(n for n in names if n.lower().startswith("gemma"))
+    if not gemma:
+        return None
+    return PREFERRED_MODEL if PREFERRED_MODEL in gemma else gemma[0]
+
 
 class Step(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -16,7 +31,7 @@ class Step(BaseModel):
 class GemmaAgent:
     """Small consumer of the SDK using structured JSON, without native tool-call dependence."""
 
-    def __init__(self, guard, model="gemma3:4b", endpoint="http://127.0.0.1:11434", max_steps=12):
+    def __init__(self, guard, model=PREFERRED_MODEL, endpoint=DEFAULT_ENDPOINT, max_steps=12):
         self.guard = guard
         self.client = OllamaClient(model, endpoint)
         self.max_steps = max_steps

@@ -54,24 +54,31 @@ The distribution is named `agentguard-sdk`; the Python import is `agentguard`.
 This repository has not been published to PyPI. To use it as a dependency elsewhere:
 `pip install "agentguard-sdk @ git+https://github.com/prollysamz/agentguard"`.
 
-The offline demo uses scripted proposals against disposable fixture files. It reads
-a malicious README, blocks SSH-key access and an exfiltration command, fixes a
-calculator, runs its real unit test, and escalates a simulated push. Without
-`--interactive`, the push is denied because no approval provider is installed.
-Use `agentguard demo --interactive` to approve that simulated push once.
+`agentguard demo` gives an agent a calculator to fix in disposable fixture files whose
+README carries a prompt injection asking it to steal `~/.ssh/id_rsa`. AgentGuard blocks
+SSH-key access and the exfiltration command, allows the fix and its real unit test, and
+escalates a simulated push to main for approval.
+
+The agent is **Gemma** whenever a local Ollama has a Gemma model installed
+(`gemma3:4b` preferred); otherwise the demo falls back to scripted proposals and says so.
+`--scripted` forces the reproducible offline run. Without `--interactive`, the push is
+denied because no approval provider is installed; with it, you can approve the push once.
 No actual push, email, message delivery, or attacker connection takes place.
 
 ## Gemma integration
 
-Install Ollama separately and pull a Gemma model supported by your hardware, for example
-`ollama pull gemma3:4b`. Then:
+Install [Ollama](https://ollama.com) separately and pull a Gemma model supported by
+your hardware, for example `ollama pull gemma3:4b`. Then:
 
 ```sh
-agentguard demo --model gemma3:4b --interactive
-agentguard demo --model gemma3:4b --judge --interactive
+agentguard demo --interactive                   # auto-detected Gemma agent
+agentguard demo --judge --interactive           # plus the Gemma security judge
+agentguard demo --model gemma3:12b --interactive
+agentguard demo --scripted                      # offline, no model
 ```
 
-`--model` runs a real Gemma agent. `--judge` separately enables a Gemma security judge.
+The demo detects installed models through Ollama's `/api/tags`; `--model` picks one
+explicitly. `--judge` separately enables a Gemma security judge, including on a scripted run.
 Both use local Ollama `/api/chat` with structured JSON output. The model name is
 configurable. The agent has a 12-step limit and may complete or fail the exercise
 depending on its proposals; the offline demo is reproducible. Judge timeout, invalid

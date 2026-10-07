@@ -49,6 +49,19 @@ class OllamaClient:
                         raise ValueError("Ollama response exceeds limit")
                 return json.loads(content)["message"]["content"]
 
+    def models(self) -> list[str]:
+        """Names of locally installed models, from Ollama's /api/tags."""
+        with httpx.Client(timeout=self.timeout, trust_env=False, follow_redirects=False) as client:
+            with client.stream("GET", self.endpoint + "/api/tags") as response:
+                response.raise_for_status()
+                content = bytearray()
+                for chunk in response.iter_bytes(chunk_size=4096):
+                    content.extend(chunk)
+                    if len(content) > 1_048_576:
+                        raise ValueError("Ollama response exceeds limit")
+        models = json.loads(content).get("models", [])
+        return [m["name"] for m in models if isinstance(m, dict) and isinstance(m.get("name"), str)]
+
 
 class GemmaJudge:
     def __init__(self, model="gemma3:4b", endpoint="http://127.0.0.1:11434", timeout=10):
