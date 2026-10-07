@@ -20,6 +20,7 @@ from agentguard.core.action import Action, Context
 from agentguard.core.context import SessionRiskContext
 from agentguard.core.decision import Decision, Effect, GuardDenied, GuardError
 from agentguard.policy.engine import PolicyEngine
+from agentguard.policy.explain import combine
 from agentguard.policy.loader import load_policy
 from agentguard.policy.matcher import absolute_path, resolve_path
 from agentguard.risk.scorer import Risk, score
@@ -328,14 +329,8 @@ class Guard:
                     reasons.append("Semantic judge flagged this action; human approval required")
             except Exception:
                 reasons.append("Semantic judge unavailable; deterministic evaluation retained")
-        effect = policy_result
-        if risk.hard_deny or risk.score >= self.policy.risk.deny:
-            effect = Effect.DENY
-        elif effect != Effect.DENY and risk.score >= self.policy.risk.ask:
-            effect = Effect.ASK
-        return Decision(
-            effect, policy_result, risk.score, tuple(reasons), risk.score >= self.policy.risk.strong
-        )
+        effect, strong = combine(self.policy, policy_result, risk)
+        return Decision(effect, policy_result, risk.score, tuple(reasons), strong)
 
     def _event(self, action, decision, stage, **extra):
         data = action.model_dump()
