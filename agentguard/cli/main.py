@@ -48,6 +48,22 @@ def main(argv=None):
         choices=["development", "test", "staging", "production"],
     )
     explain.add_argument("--json", action="store_true", help="Print the full result as JSON")
+    approvers = sub.add_parser("approvers", help="Manage people who can approve actions")
+    approvers_sub = approvers.add_subparsers(dest="approvers_command", required=True)
+    add = approvers_sub.add_parser("add", help="Create an approver and print their token")
+    add.add_argument("name")
+    add.add_argument("--slack-user", help="Slack user ID allowed to click approval buttons")
+    add.add_argument("--strong", action="store_true", help="May give strong approval")
+    remove = approvers_sub.add_parser("remove", help="Delete an approver and their logins")
+    remove.add_argument("name")
+    listing = approvers_sub.add_parser("list", help="List approvers")
+    approvals = sub.add_parser("approvals", help="Inspect approval requests")
+    approvals_sub = approvals.add_subparsers(dest="approvals_command", required=True)
+    requests = approvals_sub.add_parser("list", help="List requests, newest first")
+    requests.add_argument("--status", choices=["pending", "approved", "rejected", "expired"])
+    requests.add_argument("--limit", type=int, default=50)
+    for command in (add, remove, listing, requests):
+        command.add_argument("--store", default="agentguard-approvals.db")
     demo = sub.add_parser("demo", help="Run the isolated prompt-injection demo")
     demo.add_argument("--audit", default="agentguard-demo.jsonl")
     source = demo.add_mutually_exclusive_group()
@@ -81,6 +97,8 @@ def main(argv=None):
                 judge_model = args.model or detected or gemma_agent.PREFERRED_MODEL
             run_demo(args.audit, model, judge_model, args.interactive)
             return 0
+        if args.command in {"approvers", "approvals"}:
+            return manage_approvals(args)
         if args.command == "check-policy":
             return check_policy(args.policy)
         if args.command == "explain":
@@ -125,10 +143,8 @@ def main(argv=None):
         print(f"AgentGuard: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
-        print(
-            f"AgentGuard: {type(exc).__name__}; check local model/service availability",
-            file=sys.stderr,
-        )
+        hint = "; check local model/service availability" if args.command == "demo" else ""
+        print(f"AgentGuard: {type(exc).__name__}{hint}", file=sys.stderr)
         return 1
 
 
@@ -142,6 +158,39 @@ def _policy_errors(exc):
             lines.append(f"  {location}: {error['msg']}")
         return lines
     return [f"  {type(cause).__name__}: {cause}"]
+
+
+def manage_approvals(args):
+    from datetime import UTC, datetime
+
+    from agentguard.approval.store import ApprovalStore
+
+    store = ApprovalStore(args.store)
+    if args.command == "approvals":
+        for request in store.list_requests(status=args.status, limit=args.limit):
+            created = datetime.fromtimestamp(request["created"], UTC).strftime("%Y-%m-%d %H:%M")
+            decided = f" by {request['decided_by']}" if request["decided_by"] else ""
+            print(
+                f"{request['id']}  {request['status']:<8}{decided:<14} {created}  "
+                f"{request['agent_id']}  {request['tool']} ({request['capability']})  "
+                f"risk {request['risk']}"
+            )
+        return 0
+    if args.approvers_command == "add":
+        token = store.add_approver(args.name, slack_user_id=args.slack_user, can_strong=args.strong)
+        print(f"Approver {args.name} created. Token (shown once; store it securely):")
+        print(token)
+        return 0
+    if args.approvers_command == "remove":
+        store.remove_approver(args.name)
+        print(f"Approver {args.name} removed.")
+        return 0
+    for approver in store.list_approvers():
+        flags = ["strong" if approver["can_strong"] else ""]
+        if approver["slack_user_id"]:
+            flags.append(f"slack {approver['slack_user_id']}")
+        print(approver["name"], " ".join(f for f in flags if f))
+    return 0
 
 
 def check_policy(path):

@@ -3,11 +3,19 @@
 import functools
 import inspect
 
-from agentguard.core.decision import GuardDenied
+from agentguard.core.decision import ApprovalPending, GuardDenied
 
 
 def denial_result(exc: GuardDenied) -> dict:
     """What the model sees when AgentGuard denies a call: the reasons, so it can adapt."""
+    if isinstance(exc, ApprovalPending):
+        return {
+            "error": "Approval pending",
+            "request_id": exc.request_id,
+            "reasons": list(exc.decision.reasons),
+            "next_step": "A human must approve this. Continue with other work and retry "
+            "the same call later.",
+        }
     return {"error": "Denied by AgentGuard", "reasons": list(exc.decision.reasons)}
 
 

@@ -25,3 +25,16 @@ class GuardDenied(GuardError):
     def __init__(self, decision: Decision):
         self.decision = decision
         super().__init__("Action denied: " + "; ".join(decision.reasons))
+
+
+class ApprovalPending(GuardDenied):
+    """Not run yet: a human has been asked. Retry the same call after they approve."""
+
+    def __init__(self, decision: Decision, request_id: str):
+        self.request_id = request_id
+        GuardError.__init__(
+            self,
+            f"Approval pending (request {request_id}); retry the same call after approval: "
+            + "; ".join(decision.reasons),
+        )
+        self.decision = decision

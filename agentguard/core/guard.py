@@ -17,7 +17,13 @@ from agentguard.approval.base import Approval, request_bounded
 from agentguard.audit.logger import AuditLogger
 from agentguard.core.action import Action, Context
 from agentguard.core.context import SessionRiskContext
-from agentguard.core.decision import Decision, Effect, GuardDenied, GuardError
+from agentguard.core.decision import (
+    ApprovalPending,
+    Decision,
+    Effect,
+    GuardDenied,
+    GuardError,
+)
 from agentguard.core.ratelimit import LocalRateLimiter
 from agentguard.policy.engine import PolicyEngine
 from agentguard.policy.explain import combine
@@ -494,8 +500,23 @@ class Guard:
             approval = request_bounded(self.approval, action, decision, self.approval_timeout)
             allowed = approval.approved
         if not allowed:
-            session.state.denied_actions.append(action.id)
             reasons = decision.reasons
+            if approval.pending_id:
+                reasons += (f"Awaiting human approval (request {approval.pending_id})",)
+                pending = Decision(
+                    Effect.DENY, decision.policy_result, decision.risk_score, reasons
+                )
+                self._event(
+                    action,
+                    pending,
+                    "denied",
+                    final_decision="deny",
+                    execution_status="not_executed",
+                    approval_request_id=approval.pending_id,
+                    approval_status="pending",
+                )
+                raise ApprovalPending(pending, approval.pending_id)
+            session.state.denied_actions.append(action.id)
             if decision.effect == Effect.ASK:
                 reasons += ("Approval rejected, unavailable, insufficient, or timed out",)
             denied = Decision(Effect.DENY, decision.policy_result, decision.risk_score, reasons)

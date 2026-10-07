@@ -9,7 +9,13 @@ from importlib.metadata import PackageNotFoundError, version
 
 from agentguard.approval.base import Approval, ApprovalProvider
 from agentguard.core.action import Action
-from agentguard.core.decision import Decision, Effect, GuardDenied, GuardError
+from agentguard.core.decision import (
+    ApprovalPending,
+    Decision,
+    Effect,
+    GuardDenied,
+    GuardError,
+)
 from agentguard.core.guard import Guard
 from agentguard.policy.explain import explain
 from agentguard.policy.loader import load_policy
@@ -22,6 +28,7 @@ except PackageNotFoundError:  # Running from a source tree without installation.
 __all__ = [
     "Action",
     "Approval",
+    "ApprovalPending",
     "ApprovalProvider",
     "Decision",
     "Effect",
