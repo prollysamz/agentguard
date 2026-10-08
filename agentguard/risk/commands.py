@@ -65,7 +65,7 @@ INFRA = "Irreversible infrastructure or data operation"
 RAW_NET = "Raw network transfer"
 DNS_SUBST = "Command output sent through DNS lookup"
 INLINE_NET = "Inline code with network access"
-SECRET_ENV = "Reads secret environment variables"
+SENSITIVE_VARIABLES = "Reads secret environment variables"
 ENV_DUMP = "Environment dump sent to another program"
 DYNAMIC = "Dynamically constructed command"
 PIPED_CODE = "Generated code piped into an interpreter"
@@ -278,7 +278,7 @@ def assess(command, depth=0):
     if PROCESS_SUBSTITUTION.search(command):
         ask.append(PIPED_CODE)
     if SECRET_VARIABLE.search(command):
-        ask.append(SECRET_ENV)
+        ask.append(SENSITIVE_VARIABLES)
     return deny, list(dict.fromkeys(ask))
 
 
