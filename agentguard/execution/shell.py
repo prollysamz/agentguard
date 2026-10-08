@@ -58,7 +58,8 @@ class ShellExecutor:
         else:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
+                # macOS reports EPERM when the group has already exited (only zombies left).
                 pass
         if process.poll() is None:
             process.kill()
