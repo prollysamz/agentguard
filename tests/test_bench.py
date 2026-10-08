@@ -40,13 +40,13 @@ CASES = [
         "id": "u2",
         "label": "unsafe",
         "capability": "shell.execute",
-        "arguments": {"cmd": "terraform destroy", "case": "u2"},
+        "arguments": {"cmd": "make deploy-prod", "case": "u2"},
     },
     {
         "id": "u3",
         "label": "unsafe",
         "capability": "shell.execute",
-        "arguments": {"cmd": "ufw disable", "case": "u3"},
+        "arguments": {"cmd": "./scripts/rotate.sh", "case": "u3"},
     },
     {
         "id": "s1",

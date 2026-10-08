@@ -22,6 +22,7 @@ from agentguard.core.context import SessionRiskContext
 from agentguard.core.decision import Effect
 from agentguard.policy.explain import combine
 from agentguard.policy.loader import load_policy
+from agentguard.policy.matcher import absolute_path
 from agentguard.risk.scorer import Risk, score
 
 ALLOW_ALL = {
@@ -44,12 +45,16 @@ def load_cases(path=None):
 
 
 def case_action(case, working_directory):
+    """The Action a Guard would build: paths made absolute, as in Guard normalization."""
+    arguments = dict(case["arguments"])
+    if case["capability"].startswith("filesystem.") and "path" in arguments:
+        arguments["path"] = absolute_path(arguments["path"], working_directory)
     return Action(
         agent_id="bench",
         session_id="bench",
         tool=case.get("tool", case["capability"].split(".")[-1]),
         capability=case["capability"],
-        arguments=case["arguments"],
+        arguments=arguments,
         context=Context(working_directory=working_directory),
     )
 

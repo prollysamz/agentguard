@@ -1,12 +1,14 @@
 import json
+import re
 from dataclasses import dataclass
 
 from agentguard.core.action import Action
 from agentguard.core.context import SessionRiskContext
 from agentguard.policy.matcher import resolve_path
-from agentguard.risk.commands import analyze as analyze_command
+from agentguard.risk.commands import assess as assess_command
 from agentguard.risk.rules import (
     EXTERNAL_COMMAND,
+    PERSISTENCE_PATH,
     PROTECTED_PUSH,
     REMOTE_PUSH,
     SENSITIVE_PATH,
@@ -55,12 +57,20 @@ def score(action: Action, session: SessionRiskContext, custom=None) -> Risk:
         resolved = resolve_path(requested, action.context.working_directory) if requested else ""
         if SENSITIVE_PATH.search(requested) or SENSITIVE_PATH.search(resolved):
             return Risk(100, ("Sensitive credential file access",), True)
+        # Compare POSIX-style: C:\etc\x and /etc/x are the same location to the rules.
+        posix = [re.sub(r"^[A-Za-z]:", "", p.replace("\\", "/")) for p in (requested, resolved)]
+        if cap != "filesystem.read" and any(PERSISTENCE_PATH.search(p) for p in posix if p):
+            base = max(base, 70)
+            reasons.append("Changes a startup, hook, CI, service or log location")
     if cap in {"shell.execute", "repository.write"}:
         if SENSITIVE_PATH.search(command):
             return Risk(100, ("Command references credential files",), True)
-        destructive = analyze_command(command)
+        destructive, concerns = assess_command(command)
         if destructive:
             return Risk(100, tuple(destructive), True)
+        if concerns:
+            base = max(base, 70)
+            reasons.extend(concerns)
         if PROTECTED_PUSH.search(command):
             base = max(base, 72)
             reasons.append("Protected branch or force push")

@@ -2,8 +2,17 @@ import re
 
 # Credential locations. "@" and "=" cover file arguments like curl -d @.env or --file=.env.
 SENSITIVE_PATH = re.compile(
-    r"(?i)(?:^|[/\\\s\"'@=])(?:\.ssh|\.aws|\.gnupg|\.kube)(?:[/\\\s\"']|$)"
-    r"|(?:^|[/\\\s\"'@=])\.env(?:[.\s\"']|$)|id_(?:rsa|ed25519)|/etc/(?:shadow|passwd)"
+    r"(?i)(?:^|[/\\\s\"'@=<])(?:\.ssh|\.aws|\.gnupg|\.kube|\.azure|\.config[/\\]gcloud)(?:[/\\\s\"']|$)"
+    r"|(?:^|[/\\\s\"'@=<])\.env(?:[.\s\"']|$)|id_(?:rsa|ed25519|ecdsa|dsa)\b|/etc/(?:shadow|passwd|sudoers)"
+    r"|(?:^|[/\\\s\"'@=<])\.(?:netrc|git-credentials|pgpass|pypirc|npmrc|my\.cnf)(?:[\s\"']|$)"
+    r"|[/\\]\.docker[/\\]config\.json|credentials\.db|[/\\](?:Cookies|cookies\.sqlite|Login Data)$"
+)
+# Places where a write changes what runs later: shell profiles, hooks, CI, services, logs.
+PERSISTENCE_PATH = re.compile(
+    r"(?i)(?:^|[/\\])\.(?:bashrc|bash_profile|bash_login|zshrc|zprofile|zshenv|profile)$"
+    r"|(?:^|[/\\])\.git[/\\]hooks[/\\]|(?:^|[/\\])\.github[/\\]workflows[/\\]"
+    r"|^/etc/|^/var/spool/cron|^/var/log/|[/\\]\.config[/\\](?:systemd|autostart|fish)[/\\]"
+    r"|[/\\]Library[/\\]Launch(?:Agents|Daemons)[/\\]|[/\\]Start Menu[/\\]Programs[/\\]Startup"
 )
 DANGEROUS_COMMANDS = [
     (

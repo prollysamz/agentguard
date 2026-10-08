@@ -56,6 +56,42 @@ WORLD = "World-writable permissions"
 FETCH_EXEC = "Download and execute pipeline"
 DYNAMIC = "Dynamic or encoded command execution"
 WINDOWS = "Destructive Windows command"
+SETUID = "Setuid or setgid permissions"
+FIREWALL = "Disables firewall or network protection"
+DECODE_EXEC = "Decoded payload executed"
+# Ask-level concerns: often legitimate, worth a human look.
+INFRA = "Irreversible infrastructure or data operation"
+RAW_NET = "Raw network transfer"
+DNS_SUBST = "Command output sent through DNS lookup"
+INLINE_NET = "Inline code with network access"
+SECRET_ENV = "Reads secret environment variables"
+ENV_DUMP = "Environment dump sent to another program"
+
+CLOUD_CLIS = {"aws", "gcloud", "gsutil", "az", "doctl", "oci"}
+DESTRUCTIVE_VERBS = {"delete", "rm", "rb", "destroy", "terminate-instances", "purge", "remove"}
+SQL_CLIENTS = {
+    "psql",
+    "mysql",
+    "mariadb",
+    "sqlite3",
+    "sqlcmd",
+    "mongosh",
+    "mongo",
+    "clickhouse-client",
+}
+SQL_DESTRUCTIVE = re.compile(
+    r"(?i)\b(drop|truncate)\s+(table|database|schema|collection)\b|\bdelete\s+from\b|\.drop\("
+)
+RAW_NET_TOOLS = {"nc", "ncat", "netcat", "socat", "telnet"}
+INLINE_INTERPRETERS = {"python", "python3", "node", "perl", "ruby", "php", "deno", "bun"}
+NETWORK_CODE = re.compile(
+    r"urllib|requests\.|http\.client|https?:|socket|fetch\(|net/http|LWP|Net::|XMLHttpRequest|require\(['\"]https?"
+)
+DECODERS = {"base64", "b64decode", "xxd", "uudecode", "openssl", "certutil"}
+DNS_TOOLS = re.compile(r"(?i)\b(nslookup|dig|host|drill|resolve-dnsname)\b[^;&|\n]*(\$\(|`)")
+SECRET_VARIABLE = re.compile(
+    r"\$\{?[A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIAL|DATABASE_URL)[A-Za-z0-9_]*\}?"
+)
 
 
 def _program(token):
@@ -125,6 +161,107 @@ def _world_writable(mode):
     return bool(symbolic and set(symbolic.group(1)) & {"a", "o"} and "w" in symbolic.group(2))
 
 
+def _setuid(mode):
+    if re.fullmatch(r"[0-7]{4}", mode):
+        return int(mode[0]) & 6 != 0
+    symbolic = re.fullmatch(r"[ugoa]*[+=]([rwxXst]+)", mode)
+    return bool(symbolic and "s" in symbolic.group(1))
+
+
+def _disables_firewall(program, args):
+    joined = " ".join(args)
+    if program == "ufw":
+        return "disable" in args
+    if program in {"iptables", "ip6tables"}:
+        return bool({"-f", "--flush", "-x"} & set(args)) or "-p input accept" in joined
+    if program == "nft":
+        return "flush ruleset" in joined
+    if program in {"systemctl", "service"}:
+        return bool({"stop", "disable", "mask"} & set(args)) and any(
+            unit in joined for unit in ("firewalld", "ufw", "nftables", "iptables", "apparmor")
+        )
+    if program == "setenforce":
+        return "0" in args or "permissive" in args
+    if program == "netsh":
+        return "advfirewall" in joined and "off" in args
+    if program == "set-netfirewallprofile":
+        return "-enabled" in joined and "false" in joined
+    if program == "set-mppreference":
+        return "-disablerealtimemonitoring" in joined
+    return False
+
+
+def _concerns(argv, position):
+    """Ask-level reasons for one simple command at ``position`` in its pipeline."""
+    # A bare env/printenv dumps the environment; check before unwrapping "env" as a prefix.
+    if position == 0 and len(argv) == 1 and _program(argv[0]) in {"env", "printenv", "set"}:
+        return ["__env_source__"]
+    argv, _ = _unwrap(argv)
+    if not argv:
+        return []
+    program, args = _program(argv[0]), argv[1:]
+    lowered = [a.lower() for a in args]
+    concerns = []
+    if program in {"terraform", "tofu"} and ("destroy" in lowered or "-destroy" in lowered):
+        concerns.append(INFRA)
+    elif program == "pulumi" and {"destroy", "down"} & set(lowered):
+        concerns.append(INFRA)
+    elif program == "kubectl" and lowered[:1] == ["delete"]:
+        concerns.append(INFRA)
+    elif program == "helm" and lowered[:1] and lowered[0] in {"uninstall", "delete"}:
+        concerns.append(INFRA)
+    elif program in CLOUD_CLIS and (
+        set(lowered) & DESTRUCTIVE_VERBS or any(a.startswith("delete-") for a in lowered)
+    ):
+        concerns.append(INFRA)
+    elif program in SQL_CLIENTS and any(SQL_DESTRUCTIVE.search(a) for a in args):
+        concerns.append(INFRA)
+    elif program == "git" and (
+        ("reset" in lowered and "--hard" in lowered)
+        or ("clean" in lowered and any(a.startswith("-") and "f" in a for a in lowered))
+        or ("push" in lowered and {"--mirror", "--delete"} & set(lowered))
+    ):
+        concerns.append(INFRA)
+    if (
+        program in RAW_NET_TOOLS
+        and (
+            position > 0
+            or "<" in args
+            or {"-e", "--exec", "-c"} & set(lowered)
+            or program == "socat"
+        )
+        and "-z" not in lowered
+    ):
+        concerns.append(RAW_NET)
+    if program in INLINE_INTERPRETERS:
+        for index, arg in enumerate(args):
+            if arg in {"-c", "-e", "--eval", "-r"} and index + 1 < len(args):
+                if NETWORK_CODE.search(args[index + 1]):
+                    concerns.append(INLINE_NET)
+    return concerns
+
+
+def assess(command, depth=0):
+    """(deny_reasons, ask_reasons) for ``command``."""
+    deny = analyze(command, depth)
+    try:
+        pipelines = _pipelines(_tokens(command))
+    except ValueError:
+        pipelines = []
+    ask = []
+    for pipeline in pipelines:
+        stage_concerns = [_concerns(argv, index) for index, argv in enumerate(pipeline)]
+        if "__env_source__" in stage_concerns[0] and len(pipeline) > 1:
+            ask.append(ENV_DUMP)
+        for concerns in stage_concerns:
+            ask += [c for c in concerns if c != "__env_source__"]
+    if DNS_TOOLS.search(command):
+        ask.append(DNS_SUBST)
+    if SECRET_VARIABLE.search(command):
+        ask.append(SECRET_ENV)
+    return deny, list(dict.fromkeys(ask))
+
+
 def _judge(argv, depth):
     argv, privileged = _unwrap(argv)
     reasons = [DISK] if privileged else []
@@ -168,6 +305,10 @@ def _judge(argv, depth):
         modes = [a for a in args if not a.startswith("-") or re.fullmatch(r"-[rwxXst]+", a)]
         if modes and _world_writable(modes[0].lstrip("+")):
             reasons.append(WORLD)
+        if modes and _setuid(modes[0]):
+            reasons.append(SETUID)
+    elif _disables_firewall(program, lowered):
+        reasons.append(FIREWALL)
     elif program == "dd" and any(a.startswith(("of=/dev/", "of=\\\\.\\")) for a in lowered):
         reasons.append(DISK)
     elif program.startswith("mkfs") or program in DISK_TOOLS:
@@ -188,6 +329,11 @@ def _judge(argv, depth):
     return reasons
 
 
+def _decodes(argv):
+    lowered = [a.lower() for a in _unwrap(argv)[0][1:]]
+    return bool({"-d", "--decode", "-r", "-decode", "-D"} & set(lowered)) or "enc" in lowered
+
+
 def analyze(command, depth=0):
     """Reasons ``command`` is destructive; empty if none were found."""
     if depth > MAX_DEPTH:
@@ -205,6 +351,9 @@ def analyze(command, depth=0):
             unwrapped = _unwrap(argv)[0]
             programs.append(_program(unwrapped[0]) if unwrapped else "")
         for index, program in enumerate(programs):
-            if program in DOWNLOADERS and set(programs[index + 1 :]) & INTERPRETERS:
+            later = set(programs[index + 1 :])
+            if program in DOWNLOADERS and later & INTERPRETERS:
                 reasons.append(FETCH_EXEC)
+            if program in DECODERS and later & INTERPRETERS and _decodes(pipeline[index]):
+                reasons.append(DECODE_EXEC)
     return list(dict.fromkeys(reasons))
