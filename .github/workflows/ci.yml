@@ -16,8 +16,8 @@ jobs:
     env:
       HYPOTHESIS_PROFILE: ${{ github.event_name == 'schedule' && 'thorough' || 'default' }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -e ".[dev,all]"
