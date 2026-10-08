@@ -3,9 +3,11 @@ with gVisor). This is OS-level isolation for code you do not trust, such as a re
 test suite or build scripts.
 
 Defaults: no network, read-only root filesystem, every Linux capability dropped,
-no-new-privileges, an unprivileged user, memory/CPU/process limits, a small noexec /tmp,
-and the workspace mounted read-only. Pass ``workspace_mode="rw"`` to let commands write
-to the workspace, and ``runtime="runsc"`` to use gVisor's user-space kernel.
+no-new-privileges, an unprivileged user (``nobody``), memory/CPU/process limits, a small
+noexec /tmp, and the workspace mounted read-only. Pass ``workspace_mode="rw"`` to let
+commands write to the workspace; the container then runs as the host's own uid:gid so the
+files stay writable (``nobody`` if the host process is root). ``runtime="runsc"`` uses
+gVisor's user-space kernel.
 """
 
 import os
@@ -37,6 +39,15 @@ ENGINE_ENV = (
 )
 
 
+def _default_user(workspace_mode):
+    """nobody, or for a writable workspace the host's own unprivileged uid:gid so files
+    can be written (never root: a root host process still maps to nobody)."""
+    getuid = getattr(os, "getuid", None)
+    if workspace_mode == "rw" and getuid and getuid() != 0:
+        return f"{getuid()}:{os.getgid()}"
+    return "65534:65534"
+
+
 class ContainerExecutor(BoundedRunner):
     capabilities = frozenset({"shell.execute", "repository.write"})
 
@@ -50,7 +61,7 @@ class ContainerExecutor(BoundedRunner):
         engine: str = "docker",
         runtime: str | None = None,
         network: str = "none",
-        user: str = "65534:65534",
+        user: str | None = None,
         memory: str = "512m",
         cpus: str = "1",
         pids: int = 128,
@@ -78,7 +89,8 @@ class ContainerExecutor(BoundedRunner):
             raise ValueError("Each command needs a non-empty argv")
         self.workspace = Path(workspace).resolve(strict=True) if workspace else None
         self.workspace_mode = workspace_mode
-        self.runtime, self.network, self.user = runtime, network, user
+        self.runtime, self.network = runtime, network
+        self.user = user or _default_user(workspace_mode)
         self.memory, self.cpus, self.pids, self.tmpfs_size = memory, cpus, pids, tmpfs_size
         self.environment = dict(environment or {})
         self.pull = pull

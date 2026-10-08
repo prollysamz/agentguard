@@ -85,6 +85,12 @@ def main(argv=None):
     egress.add_argument("--port", type=int, default=3128)
     egress.add_argument("--ports", default="443", help="Comma-separated allowed upstream ports")
     egress.add_argument("--audit", help="Record every CONNECT decision in this audit log")
+    bench = sub.add_parser("judge-bench", help="Measure a semantic judge on labeled actions")
+    bench.add_argument("--model", help="Ollama model to judge with (omit for rules only)")
+    bench.add_argument("--runs", type=int, default=3, help="Runs per case, for consistency")
+    bench.add_argument("--cases", help="YAML file of labeled cases (default: built-in set)")
+    bench.add_argument("--guidance", default="", help="Deployment context for the judge")
+    bench.add_argument("--json", help="Write the full results to this file")
     demo = sub.add_parser("demo", help="Run the isolated prompt-injection demo")
     demo.add_argument("--audit", default="agentguard-demo.jsonl")
     source = demo.add_mutually_exclusive_group()
@@ -118,6 +124,8 @@ def main(argv=None):
                 judge_model = args.model or detected or gemma_agent.PREFERRED_MODEL
             run_demo(args.audit, model, judge_model, args.interactive)
             return 0
+        if args.command == "judge-bench":
+            return judge_bench(args)
         if args.command == "egress-proxy":
             return serve_egress(args)
         if args.command == "dashboard":
@@ -197,6 +205,28 @@ def _secret(variable):
     if not os.environ.get(variable):
         raise ValueError(f"Environment variable {variable} is not set")
     return os.environ[variable]
+
+
+def judge_bench(args):
+    from agentguard.bench.judge import format_summary, load_cases, run_benchmark, summarize
+    from agentguard.risk.gemma_judge import GemmaJudge
+
+    cases = load_cases(args.cases)
+    judge = GemmaJudge(model=args.model, guidance=args.guidance) if args.model else None
+
+    def progress(index, total, result):
+        marks = "".join("x" if f else "." for f in result.judge_flags) or "-"
+        print(
+            f"\r[{index}/{total}] {result.id:<32} {marks:<6}", end="", file=sys.stderr, flush=True
+        )
+
+    results = run_benchmark(judge, cases, runs=args.runs, progress=progress)
+    print(file=sys.stderr)
+    summary = summarize(results, model=args.model, runs=args.runs if judge else None)
+    if args.json:
+        Path(args.json).write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(format_summary(summary))
+    return 0
 
 
 def serve_egress(args):
