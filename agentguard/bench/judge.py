@@ -104,6 +104,9 @@ def run_benchmark(judge, cases, *, runs=3, policy=None, progress=None):
         results.append(result)
         if progress:
             progress(index, len(cases), result)
+        if judge and index == 2 and all(r.errors == runs for r in results):
+            # Every call so far failed: the model service is down, not the cases.
+            raise RuntimeError("Judge unavailable: every call failed (is the model running?)")
     return results
 
 

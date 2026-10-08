@@ -457,3 +457,28 @@ def test_credential_stores_hard_denied(make_guard, path):
 
     with pytest.raises(GuardDenied, match="Sensitive credential"):
         read(path)
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "$'\x72m' -rf /",
+        "R=rm; $R -rf /",
+        "{rm,-rf,/}",
+        "${PATH:0:0}rm -rf /",
+        "eval 'rm -rf /'",
+        "alias x='rm -rf /'; x",
+        "busybox rm -rf /",
+        "python -c 'import shutil;shutil.rmtree(\"/\")'",
+        "perl -e 'system(\"rm -rf /\")'",
+        "bash <(echo 'rm -rf /')",
+        "printf '\x72\x6d -rf /' | sh",
+        "rm${IFS}-rf${IFS}/",
+    ],
+)
+def test_obfuscated_commands_are_never_silently_allowed(cmd):
+    """String analysis cannot decode every shell trick; obfuscation must at least ask."""
+    from agentguard.risk.commands import assess
+
+    deny, ask = assess(cmd)
+    assert deny or ask, cmd

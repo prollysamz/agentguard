@@ -13,7 +13,7 @@ import shlex
 from agentguard.risk.rules import DANGEROUS_COMMANDS
 
 PUNCTUATION = ";&|()"
-SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "ash", "busybox"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "ash"}
 INTERPRETERS = SHELLS | {
     "python",
     "python3",
@@ -43,6 +43,7 @@ WRAPPERS = {
     "unbuffer",
     "timeout",
     "watch",
+    "busybox",
 }
 PRIVILEGE = {"sudo", "doas", "su", "runas", "pkexec"}
 DISK_TOOLS = {"diskpart", "wipefs", "fdisk", "sfdisk", "parted", "shred"}
@@ -66,6 +67,14 @@ DNS_SUBST = "Command output sent through DNS lookup"
 INLINE_NET = "Inline code with network access"
 SECRET_ENV = "Reads secret environment variables"
 ENV_DUMP = "Environment dump sent to another program"
+DYNAMIC = "Dynamically constructed command"
+PIPED_CODE = "Generated code piped into an interpreter"
+INLINE_EXEC = "Inline code runs commands or deletes files"
+INLINE_EXEC_CODE = re.compile(
+    r"shutil\.rmtree|os\.(remove|unlink|rmdir|system|exec)|subprocess|\bsystem\(|\bexec\(|"
+    r"\bunlink\b|rimraf|fs\.(rm|unlink)|File\.delete|FileUtils\.rm|child_process"
+)
+PROCESS_SUBSTITUTION = re.compile(r"\b(sh|bash|zsh|dash|python3?|perl|ruby|node)\s+<\(")
 
 CLOUD_CLIS = {"aws", "gcloud", "gsutil", "az", "doctl", "oci"}
 DESTRUCTIVE_VERBS = {"delete", "rm", "rb", "destroy", "terminate-instances", "purge", "remove"}
@@ -202,6 +211,10 @@ def _concerns(argv, position):
     program, args = _program(argv[0]), argv[1:]
     lowered = [a.lower() for a in args]
     concerns = []
+    # The program name is built at run time ($R, ${IFS}, $'\x72m', {rm,-rf,/}): it cannot be
+    # judged, and legitimate agent commands rarely need it.
+    if any(marker in argv[0] for marker in ("$", "`")) or argv[0].startswith("{"):
+        concerns.append(DYNAMIC)
     if program in {"terraform", "tofu"} and ("destroy" in lowered or "-destroy" in lowered):
         concerns.append(INFRA)
     elif program == "pulumi" and {"destroy", "down"} & set(lowered):
@@ -238,6 +251,8 @@ def _concerns(argv, position):
             if arg in {"-c", "-e", "--eval", "-r"} and index + 1 < len(args):
                 if NETWORK_CODE.search(args[index + 1]):
                     concerns.append(INLINE_NET)
+                if INLINE_EXEC_CODE.search(args[index + 1]):
+                    concerns.append(INLINE_EXEC)
     return concerns
 
 
@@ -253,10 +268,15 @@ def assess(command, depth=0):
         stage_concerns = [_concerns(argv, index) for index, argv in enumerate(pipeline)]
         if "__env_source__" in stage_concerns[0] and len(pipeline) > 1:
             ask.append(ENV_DUMP)
+        programs = [_program(_unwrap(argv)[0][0]) if _unwrap(argv)[0] else "" for argv in pipeline]
+        if any(p in INTERPRETERS for p in programs[1:]) and programs[0] not in DOWNLOADERS:
+            ask.append(PIPED_CODE)
         for concerns in stage_concerns:
             ask += [c for c in concerns if c != "__env_source__"]
     if DNS_TOOLS.search(command):
         ask.append(DNS_SUBST)
+    if PROCESS_SUBSTITUTION.search(command):
+        ask.append(PIPED_CODE)
     if SECRET_VARIABLE.search(command):
         ask.append(SECRET_ENV)
     return deny, list(dict.fromkeys(ask))
@@ -273,6 +293,12 @@ def _judge(argv, depth):
         index = args.index("-c")
         if index + 1 < len(args):
             reasons += analyze(args[index + 1], depth + 1)
+    if program == "eval" and args:
+        reasons += analyze(" ".join(args), depth + 1)
+    if program == "alias":
+        for definition in args:
+            if "=" in definition:
+                reasons += analyze(definition.split("=", 1)[1], depth + 1)
     if program == "cmd" and lowered[:1] and lowered[0] in {"/c", "/k", "/r"}:
         reasons += analyze(" ".join(args[1:]), depth + 1)
     if program in {"powershell", "pwsh"}:

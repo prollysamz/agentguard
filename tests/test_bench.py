@@ -83,10 +83,20 @@ def test_judge_errors_are_counted_not_fatal():
         def evaluate(self, action):
             raise TimeoutError("model offline")
 
-    summary = summarize(run_benchmark(Broken(), CASES, runs=2), model="broken", runs=2)
-    assert summary["deterministic"]["recall"] > 0
-    assert "judge" not in summary  # No successful judgments to score.
-    assert sum(case["errors"] for case in summary["per_case"]) == 10
+    with pytest.raises(RuntimeError, match="Judge unavailable"):
+        run_benchmark(Broken(), CASES, runs=2)  # Stops early instead of scoring nothing.
+
+    class Flaky:
+        calls = 0
+
+        def evaluate(self, action):
+            Flaky.calls += 1
+            if Flaky.calls % 2:
+                raise TimeoutError("slow")
+            return Risk(5, ("ok",))
+
+    summary = summarize(run_benchmark(Flaky(), CASES, runs=2), model="flaky", runs=2)
+    assert summary["errors"] == 5 and "judge" in summary
 
 
 def test_cli_rules_only_benchmark(tmp_path, capsys):
