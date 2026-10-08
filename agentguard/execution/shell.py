@@ -8,30 +8,17 @@ from pathlib import Path
 
 from agentguard.core.decision import GuardError
 
+# Windows Store Python needs these OS paths; omitting SystemDrive can create a literal
+# %SystemDrive% directory in cwd. PATH and credentials are never inherited.
+OS_PATHS = ("SystemRoot", "WINDIR", "SystemDrive", "ProgramData", "TEMP", "TMP")
 
-class ShellExecutor:
-    """Exact command-to-argv mapping. This is a restricted runner, not an OS sandbox."""
 
-    capabilities = frozenset({"shell.execute", "repository.write"})
+class BoundedRunner:
+    """Run an argv with a timeout, a combined-output cap and process-tree cleanup."""
 
-    def __init__(
-        self,
-        root: str | Path,
-        commands: dict[str, list[str]],
-        *,
-        timeout: float = 10,
-        max_output_bytes: int = 65536,
-        environment: dict[str, str] | None = None,
-        check: bool = True,
-    ):
-        self.root = Path(root).resolve(strict=True)
-        self.commands = {k: tuple(v) for k, v in commands.items()}
-        for argv in self.commands.values():
-            if not argv or not Path(argv[0]).is_absolute() or not Path(argv[0]).is_file():
-                raise ValueError("Each command needs an existing absolute executable path")
+    def __init__(self, *, timeout, max_output_bytes, check):
         self.timeout = timeout
         self.max_output_bytes = max_output_bytes
-        self.environment = dict(environment or {})
         # check=False returns nonzero exits (e.g. failing tests) instead of raising.
         self.check = check
 
@@ -64,22 +51,14 @@ class ShellExecutor:
         if process.poll() is None:
             process.kill()
 
-    def execute(self, action):
-        command = action.arguments.get("cmd", action.arguments.get("command"))
-        argv = self.commands.get(command)
-        if argv is None:
-            raise GuardError("Command is not in the exact execution allowlist")
-        # Windows Store Python needs these OS paths; omitting SystemDrive can create
-        # a literal %SystemDrive% directory in cwd. Never inherit PATH or credentials.
-        os_paths = ("SystemRoot", "WINDIR", "SystemDrive", "ProgramData", "TEMP", "TMP")
-        env = {k: os.environ[k] for k in os_paths if k in os.environ}
-        env.update(self.environment)
+    def _run(self, argv, *, cwd, env, on_abort=None):
+        """``on_abort`` runs after a timeout or output overflow (e.g. to stop a container)."""
         output = bytearray()
         overflow = threading.Event()
         # Allowlisted argv with shell=False; the model only chooses which entry.
         process = subprocess.Popen(  # nosec B603
             argv,
-            cwd=self.root,
+            cwd=cwd,
             env=env,
             shell=False,
             stdin=subprocess.DEVNULL,
@@ -87,6 +66,11 @@ class ShellExecutor:
             stderr=subprocess.STDOUT,
             start_new_session=os.name != "nt",
         )
+
+        def abort():
+            self._kill(process)
+            if on_abort is not None:
+                on_abort()
 
         def collect():
             while True:
@@ -97,7 +81,7 @@ class ShellExecutor:
                 output.extend(chunk[: max(0, remaining)])
                 if len(chunk) > remaining:
                     overflow.set()
-                    self._kill(process)
+                    abort()
                     break
 
         reader = threading.Thread(target=collect, daemon=True)
@@ -106,7 +90,7 @@ class ShellExecutor:
             process.wait(timeout=self.timeout)
             reader.join(timeout=1)
             if reader.is_alive():
-                self._kill(process)
+                abort()
                 raise GuardError("Subprocess output stream did not close")
             if overflow.is_set():
                 raise GuardError("Command exceeded output limit")
@@ -117,7 +101,7 @@ class ShellExecutor:
                 "output": output.decode("utf-8", errors="replace"),
             }
         except subprocess.TimeoutExpired as exc:
-            self._kill(process)
+            abort()
             raise GuardError("Command timed out") from exc
         finally:
             if process.poll() is None:
@@ -126,3 +110,40 @@ class ShellExecutor:
             reader.join(timeout=1)
             if not reader.is_alive():
                 process.stdout.close()
+
+
+def _command(action, commands):
+    argv = commands.get(action.arguments.get("cmd", action.arguments.get("command")))
+    if argv is None:
+        raise GuardError("Command is not in the exact execution allowlist")
+    return argv
+
+
+class ShellExecutor(BoundedRunner):
+    """Exact command-to-argv mapping. This is a restricted runner, not an OS sandbox."""
+
+    capabilities = frozenset({"shell.execute", "repository.write"})
+
+    def __init__(
+        self,
+        root: str | Path,
+        commands: dict[str, list[str]],
+        *,
+        timeout: float = 10,
+        max_output_bytes: int = 65536,
+        environment: dict[str, str] | None = None,
+        check: bool = True,
+    ):
+        super().__init__(timeout=timeout, max_output_bytes=max_output_bytes, check=check)
+        self.root = Path(root).resolve(strict=True)
+        self.commands = {k: tuple(v) for k, v in commands.items()}
+        for argv in self.commands.values():
+            if not argv or not Path(argv[0]).is_absolute() or not Path(argv[0]).is_file():
+                raise ValueError("Each command needs an existing absolute executable path")
+        self.environment = dict(environment or {})
+
+    def execute(self, action):
+        argv = _command(action, self.commands)
+        env = {k: os.environ[k] for k in OS_PATHS if k in os.environ}
+        env.update(self.environment)
+        return self._run(argv, cwd=self.root, env=env)

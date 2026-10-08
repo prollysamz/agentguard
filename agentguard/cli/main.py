@@ -79,6 +79,12 @@ def main(argv=None):
     dashboard.add_argument(
         "--secure-cookies", action="store_true", help="Mark cookies Secure (behind HTTPS)"
     )
+    egress = sub.add_parser("egress-proxy", help="Run an allowlisting HTTPS egress proxy")
+    egress.add_argument("--allow", action="append", required=True, metavar="DOMAIN")
+    egress.add_argument("--host", default="127.0.0.1")
+    egress.add_argument("--port", type=int, default=3128)
+    egress.add_argument("--ports", default="443", help="Comma-separated allowed upstream ports")
+    egress.add_argument("--audit", help="Record every CONNECT decision in this audit log")
     demo = sub.add_parser("demo", help="Run the isolated prompt-injection demo")
     demo.add_argument("--audit", default="agentguard-demo.jsonl")
     source = demo.add_mutually_exclusive_group()
@@ -112,6 +118,8 @@ def main(argv=None):
                 judge_model = args.model or detected or gemma_agent.PREFERRED_MODEL
             run_demo(args.audit, model, judge_model, args.interactive)
             return 0
+        if args.command == "egress-proxy":
+            return serve_egress(args)
         if args.command == "dashboard":
             return serve_dashboard(args)
         if args.command in {"approvers", "approvals"}:
@@ -189,6 +197,28 @@ def _secret(variable):
     if not os.environ.get(variable):
         raise ValueError(f"Environment variable {variable} is not set")
     return os.environ[variable]
+
+
+def serve_egress(args):
+    from agentguard.audit.logger import AuditLogger
+    from agentguard.execution.egress import EgressProxy
+
+    audit = AuditLogger(args.audit) if args.audit else None
+    proxy = EgressProxy(
+        args.allow,
+        host=args.host,
+        port=args.port,
+        ports=[int(p) for p in args.ports.split(",")],
+        on_decision=audit.append if audit else None,
+    )
+    print(
+        f"AgentGuard egress proxy on http://{args.host}:{args.port} allowing {', '.join(args.allow)}"
+    )
+    try:
+        proxy.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
 def serve_dashboard(args):

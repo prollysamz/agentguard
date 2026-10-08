@@ -1,15 +1,12 @@
-import ipaddress
-import socket
 from urllib.parse import urlsplit
 
-import httpx
-
 from agentguard.core.decision import GuardError
+from agentguard.execution.pinning import pinned_client, resolve_public
 from agentguard.policy.matcher import domain_matches
 
 
 class NetworkExecutor:
-    """Bounded GET only; domain allowlist, public DNS preflight, no proxies/redirects."""
+    """Bounded GET only; domain allowlist, pinned public DNS, no proxies or redirects."""
 
     capabilities = frozenset({"network.request"})
 
@@ -30,12 +27,9 @@ class NetworkExecutor:
             raise GuardError("Only credential-free HTTPS on port 443 is supported")
         if not any(domain_matches(host, d) for d in self.domains):
             raise GuardError("Network domain outside executor allowlist")
-        addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-        if not addresses or any(
-            not ipaddress.ip_address(item[4][0]).is_global for item in addresses
-        ):
-            raise GuardError("Non-public network address rejected")
-        with httpx.Client(timeout=self.timeout, follow_redirects=False, trust_env=False) as client:
+        # Resolve once and connect to that checked address: no DNS rebinding window.
+        addresses = resolve_public(host, 443)
+        with pinned_client(host, addresses, timeout=self.timeout) as client:
             with client.stream("GET", url) as response:
                 if 300 <= response.status_code < 400:
                     raise GuardError("Redirects are disabled")
