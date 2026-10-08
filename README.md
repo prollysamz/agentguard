@@ -103,7 +103,8 @@ servers use `agentguard.adapters.mcp.register_tool`; any other loop can call
 | **Policy as code** | YAML allow / ask / deny rules by capability, path, domain, environment and secrets. Explicit denies win. [Custom capabilities](https://prollysamz.github.io/agentguard/policy/#custom-capabilities) like `db.query` or `payments.refund`. |
 | **Risk checks** | Explainable 0–100 scores. Credential files, destructive commands and exfiltration after a secret was seen are always denied. |
 | **Human approval** | Risky calls go to a person in the dashboard, Slack or your own system without blocking the agent; grants like "allow this tool for 10 minutes". No answer means deny. |
-| **Controlled execution** | Executors confine files to a root and reject links, run only allowlisted commands, and allow only HTTPS GETs to listed domains. |
+| **Isolation** | Container executor (no network, read-only, no capabilities, optional gVisor), exact-command runners, DNS-pinned HTTPS, and an allowlisting egress proxy. |
+| **Detection** | gitleaks' 221 secret rules on RE2, checksum-validated PII, and shell-aware command analysis. |
 | **Verification** | Before/after hashes catch tools that change files they were not asked to. |
 | **Audit** | Every stage of every call in a signed SHA-256 hash chain with rotation, exported to OpenTelemetry or a SIEM. |
 | **Dashboard** | Approval queue, audit log viewer and a dry-run policy report. |
@@ -134,7 +135,9 @@ Slack, or through the API. Run a new agent with `mode="dry-run"` and check
 
 ## Status
 
-AgentGuard 0.3 is alpha and has not had an independent security audit. It is an
+AgentGuard 0.4 is alpha and has not had an independent security audit; see the
+[security review guide](https://prollysamz.github.io/agentguard/security-review/) and
+[benchmarks](https://prollysamz.github.io/agentguard/benchmarks/). It is an
 interception layer for cooperative applications, not an OS sandbox: an agent that also has
 unguarded tools, a raw shell or Python `exec` can go around it. Read the
 [threat model](THREAT_MODEL.md) before guarding privileged tools, and report

@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-08
+
+### Added
+- `ContainerExecutor`: allowlisted commands in Docker or Podman (optionally gVisor) with no
+  network, read-only root, no capabilities, no-new-privileges, an unprivileged user,
+  resource limits and a read-only workspace by default.
+- DNS pinning: `NetworkExecutor` connects only to the public addresses it checked.
+- `EgressProxy` and `agentguard egress-proxy`: an allowlisting HTTPS CONNECT proxy with
+  pinned public DNS and audited decisions.
+- Secret detection with the vendored gitleaks ruleset (221 rules) on RE2, and
+  `scripts/update_secret_rules.py`.
+- PII detection (email, phone, credit card, SSN, IBAN) with checksums; policies can name
+  the categories in `sensitive_data`; cards, SSNs and IBANs are redacted from logs.
+- Shell-aware command analysis (`agentguard.risk.commands`): tokenizes, splits and
+  unwraps commands; new hard-deny and ask-level categories; obfuscation asks.
+- `agentguard judge-bench`: labeled benchmark (71 cases plus a 35-case holdout) reporting
+  recall, false positives, instability and latency for rules, a judge and both combined.
+- Property-based tests (Hypothesis) for paths, URLs, commands, secrets, audit and policy.
+- CI on Linux, Windows and macOS with Python 3.11-3.14; CodeQL, bandit, pip-audit and
+  Dependabot; nightly long property runs; Docker integration tests.
+- Security review guide for an independent reviewer.
+
+### Changed
+- New dependency: `google-re2`.
+- Deterministic recall on the benchmark rose from 54% to 95% (holdout: 0% to 100%, same
+  author; see the benchmarks page).
+
+### Fixed
+- `rm -r -f`, `chmod 0777`, `curl ... | python3` evaded detection; `echo rm -rf` was
+  blocked; URLs with DEL or C1 characters were accepted.
+- Persistence paths were missed on Windows after normalization.
+- `killpg` cleanup raised on macOS; writable container workspaces were unwritable.
+
 ## [0.3.0] - 2026-10-08
 
 ### Added
@@ -85,7 +118,8 @@ Initial source release: policy as code, deterministic risk scoring, CLI approval
 controlled executors, workspace verification, hash-chained audit log, MCP adapter,
 and the prompt-injection demo with an optional local Gemma agent and judge.
 
-[Unreleased]: https://github.com/prollysamz/agentguard/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/prollysamz/agentguard/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/prollysamz/agentguard/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/prollysamz/agentguard/compare/971b8bd...v0.3.0
 [0.2.0]: https://github.com/prollysamz/agentguard/compare/8a0f847...971b8bd
 [0.1.0]: https://github.com/prollysamz/agentguard/commit/8a0f847

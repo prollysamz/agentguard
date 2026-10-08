@@ -72,6 +72,26 @@ agentguard approvals list [--status pending|approved|rejected|expired] [--store 
 `add` prints the approver's token once. The default store is `agentguard-approvals.db`.
 See [Approval](approval.md).
 
+## judge-bench
+
+```sh
+agentguard judge-bench [--model MODEL] [--runs 3] [--cases FILE] [--guidance TEXT] [--json FILE]
+```
+
+Measures the deterministic rules, and optionally a judge model through Ollama, on labeled
+actions: recall, false-positive rate, precision, F1, instability across runs and latency.
+Without `--model`, only the rules are measured. The built-in cases are in
+`agentguard/bench/`. See [Benchmarks](benchmarks.md).
+
+## egress-proxy
+
+```sh
+agentguard egress-proxy --allow DOMAIN [--allow DOMAIN ...] [--host 127.0.0.1] [--port 3128]
+                        [--ports 443] [--audit FILE]
+```
+
+Runs the allowlisting HTTPS proxy with pinned public DNS. See [Isolation](isolation.md).
+
 ## dashboard
 
 ```sh

@@ -17,12 +17,12 @@ object. Policy/configuration should not be writable through agent tools.
 
 | Threat | Control | Residual risk |
 | --- | --- | --- |
-| Prompt injection into a tool proposal | Strict argument validation, policy and hard-deny rules | Semantic intent and disguised/encoded commands can evade heuristics |
+| Prompt injection into a tool proposal | Strict argument validation, policy, shell-aware command analysis, hard-deny rules, optional judge | Shell is too expressive to analyze completely; obfuscation asks rather than being decoded; interpreter code is recognized by keywords only |
 | Accidental destructive operations | Dangerous command detection; exact command runner; filesystem scope | Approved executables may perform arbitrary operations |
-| Credential exfiltration | Secret/path detection, outbound payload inspection, session taint | Encoded, fragmented, novel secrets and PII are not comprehensively detected |
-| Unauthorized file access | Canonical path matching; confined filesystem executor | Symlink/hardlink/mount races require OS isolation |
-| Unapproved communication | Domain rules, approval, bounded HTTPS executor | DNS rebinding between preflight and connection is not prevented |
-| Privilege escalation | Dangerous-command rules, restrictive runner | Host privileges remain available to trusted tool implementations |
+| Credential exfiltration | gitleaks rules on RE2, credential-store paths, validated PII detectors, outbound payload inspection, session taint | Encoded, fragmented or novel secret formats and unstructured personal data are not detected |
+| Unauthorized file access | Canonical path matching; confined filesystem executor with link rejection; read-only container workspaces | Plain Python tools can race link changes (TOCTOU); hardlinks are not detected |
+| Unapproved communication | Domain rules, approval, HTTPS executor with pinned public DNS, allowlisting egress proxy, no-network containers | The proxy cannot see inside TLS (domain fronting); plain tools can open their own connections unless isolated |
+| Privilege escalation | Dangerous-command rules, exact-command runners, containers without capabilities or setuid | Host privileges remain available to trusted tool implementations; containers share the host kernel unless gVisor or a VM runtime is used |
 | Excessive use | Per-session, per-agent or global call rates (Redis for multiple processes), request/output sizes, command timeouts | Fixed-window Redis limits allow boundary bursts; no custom-tool timeout, token/cost accounting or hard child-process limits |
 | Unexpected modifications | Optional workspace hash verifier; halt on failure | Cannot undo effects or observe transient, network, metadata or out-of-root changes |
 | Approval failure or replay | Token-authenticated approvers (hashed), grants bound to agent, environment and scope with expiry, signed Slack/webhook traffic, CSRF-protected dashboard | A stolen approver token can approve until removed; grants widen what runs without asking; custom providers must authenticate humans themselves |
@@ -58,10 +58,15 @@ access. Git hooks, test files, Python imports, build scripts and executable bina
 code and must be trusted or isolated. Output is bounded, but descendants can escape process
 cleanup. No subprocess-count or memory limit is claimed.
 
-The network executor preflights DNS but the HTTP transport resolves the hostname again.
-An attacker controlling DNS can race that boundary. For untrusted DNS, route through a
-policy-enforcing egress proxy and network namespace/firewall. Redirects and environment
-proxies are disabled. Only GET is implemented; this is not a generic secure HTTP client.
+The network executor resolves the host once, requires every address to be public and
+connects only to those addresses, so DNS rebinding cannot redirect it. Redirects and
+environment proxies are disabled. Only GET is implemented; this is not a generic secure
+HTTP client. `EgressProxy` applies the same pinning to tunneled connections, but only
+network isolation can force tools to use it.
+
+`ContainerExecutor` adds OS-level isolation for untrusted commands: no network, read-only
+root, no capabilities, no new privileges, an unprivileged user and resource limits. It
+inherits the container engine's trust and kernel-sharing model.
 
 ## Verification and audit interpretation
 

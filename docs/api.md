@@ -47,7 +47,11 @@ Constructor options: `mode` is `"enforce"` or `"dry-run"`; `context` is
 | `agentguard.audit.report` | `build_report`, `format_report` |
 | `agentguard.core.ratelimit` | `LocalRateLimiter`, `RedisRateLimiter` |
 | `agentguard.dashboard.app` | `create_app` |
-| `agentguard.execution` | `FilesystemExecutor`, `ShellExecutor`, `NetworkExecutor`, `WorkspaceVerifier` |
+| `agentguard.execution` | `ContainerExecutor`, `FilesystemExecutor`, `ShellExecutor`, `NetworkExecutor`, `WorkspaceVerifier` |
+| `agentguard.execution.egress` | `EgressProxy` |
+| `agentguard.risk.commands` | `analyze`, `assess` |
+| `agentguard.risk.secrets` | `detect_secrets`, `detect_pii`, `detect_sensitive`, `redact` |
+| `agentguard.bench.judge` | `load_cases`, `run_benchmark`, `summarize` |
 | `agentguard.adapters.langchain` | `guarded_tool`, `from_guarded` |
 | `agentguard.adapters.openai_agents` | `guarded_tool`, `from_guarded` |
 | `agentguard.adapters.adk` | `guarded_tool`, `from_guarded` |

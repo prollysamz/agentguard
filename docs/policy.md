@@ -37,7 +37,7 @@ limits:
 | `paths` | `filesystem.*` | The resolved path equals an entry, or is under a `/**` entry |
 | `domains` | `network.request` | The URL host equals an entry, or is a subdomain of `*.example.com` |
 | `environment` | all | The Guard's environment (`development`, `test`, `staging`, `production`) |
-| `sensitive_data` | all | Arguments contain one of `api_key`, `password`, `ssh_key`, `jwt`, `database_url` |
+| `sensitive_data` | all | Arguments contain one of `api_key`, `password`, `ssh_key`, `jwt`, `database_url`, `email`, `phone`, `credit_card`, `ssn`, `iban`. See [Detection](detection.md) |
 
 Conditions in one rule are ANDed. Values in one list are ORed.
 

@@ -8,7 +8,8 @@ capability. A verifier checks the workspace afterwards.
 | --- | --- | --- |
 | `FilesystemExecutor(root, max_bytes=1_000_000)` | Confined to `root`; rejects symlinks, junctions and other reparse points on the path; bounded reads and writes; deletes files only | No hostile concurrent changes to the workspace |
 | `ShellExecutor(root, commands, timeout=10, max_output_bytes=65536, environment=None, check=True)` | Only exact command strings, each mapped to a fixed argv with an absolute executable; no shell; filtered environment; timeout; bounded output | The allowlisted programs and scripts are trusted |
-| `NetworkExecutor(domains, timeout=10, max_bytes=65536)` | HTTPS GET on port 443 only; its own domain allowlist; rejects private addresses; no redirects or proxies; bounded response | DNS is not attacker-controlled |
+| `NetworkExecutor(domains, timeout=10, max_bytes=65536)` | HTTPS GET on port 443 only; its own domain allowlist; resolves once, rejects private addresses and connects only to the checked addresses; no redirects or proxies; bounded response | TLS and the allowlisted servers are trustworthy |
+| `ContainerExecutor(image, commands, ...)` | Allowlisted commands in a container with no network, read-only root, no capabilities, an unprivileged user and resource limits; optional gVisor | The engine and image are trusted; see [Isolation](isolation.md) |
 | `WorkspaceVerifier(root, max_files=1000, max_bytes=10_000_000)` | Hashes files before and after; only the requested write/delete target may change | Small, isolated workspace |
 
 ```python
