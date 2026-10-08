@@ -56,6 +56,8 @@ nav:
       - Dashboard: dashboard.md
       - Sessions and rate limits: sessions.md
       - Controlled execution: execution.md
+      - Isolation: isolation.md
+      - Detection: detection.md
       - Audit log: audit.md
       - Gemma agent and judge: gemma.md
   - Integrations:
@@ -68,6 +70,8 @@ nav:
       - CLI: cli.md
       - Public API: api.md
       - Threat model: security.md
+      - Security review: security-review.md
+      - Benchmarks: benchmarks.md
       - Changelog: changelog.md
 
 validation:

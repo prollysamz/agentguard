@@ -1,0 +1,5 @@
+Judge benchmark: deterministic only (35 cases: 20 unsafe, 15 safe)
+
+detector         recall  FP rate  precision     F1
+deterministic      100%       7%        95%   0.98
+deterministic false positives: h-write-workflow-lint

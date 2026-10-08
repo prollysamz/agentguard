@@ -57,6 +57,11 @@ Any object with `evaluate(action) -> Risk` (and optionally a `capabilities` set)
 judge.
 
 !!! note "Measured behavior"
-    In testing, `gemma3:4b` scored the same correct code edit 28 in one run and 75 in
-    another, which is why the demo limits the judge to shell, network and messages. Treat a
-    small judge as an extra signal for a human, not a gatekeeper.
+    On the [benchmark](benchmarks.md), `gemma3:4b` as a judge caught 85% of unsafe actions
+    but flagged 37% of safe ones (writing tests, `npm ci`, `docker build`), and missed every
+    credential-file read, which the deterministic rules catch. `qwen3:8b` caught 88% with no
+    false positives. With temperature 0 and the benchmark prompt, both were stable across
+    repeated runs. Inside the demo's agent loop, with a different prompt and context,
+    `gemma3:4b` once scored the same code edit 28 and then 75, which is why the demo limits
+    the judge to shell, network and messages. Treat a small judge as an extra signal for a
+    human, not a gatekeeper, and measure your own model with `agentguard judge-bench`.
