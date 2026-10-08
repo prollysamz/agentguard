@@ -1,6 +1,8 @@
 import os
 import signal
-import subprocess
+
+# Commands are fixed argv lists from trusted configuration, never run through a shell.
+import subprocess  # nosec B404
 import threading
 from pathlib import Path
 
@@ -36,7 +38,8 @@ class ShellExecutor:
     @staticmethod
     def _kill(process):
         if os.name == "nt":
-            subprocess.run(
+            # Absolute taskkill path and a numeric PID; no untrusted input.
+            subprocess.run(  # nosec B603
                 [
                     str(
                         Path(os.environ.get("SystemRoot", r"C:\Windows"))
@@ -72,7 +75,8 @@ class ShellExecutor:
         env.update(self.environment)
         output = bytearray()
         overflow = threading.Event()
-        process = subprocess.Popen(
+        # Allowlisted argv with shell=False; the model only chooses which entry.
+        process = subprocess.Popen(  # nosec B603
             argv,
             cwd=self.root,
             env=env,

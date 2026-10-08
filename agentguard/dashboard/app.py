@@ -7,6 +7,7 @@ writes also need the ``X-AgentGuard-CSRF`` header, which other origins cannot se
 """
 
 import json
+import logging
 import threading
 from importlib.resources import files
 from pathlib import Path
@@ -24,6 +25,7 @@ from agentguard.audit.reader import read_log
 from agentguard.audit.report import build_report
 from agentguard.audit.segments import head_path, rotated_segments
 
+log = logging.getLogger(__name__)
 COOKIE = "agentguard_session"
 CSRF_HEADER = "x-agentguard-csrf"
 SECURITY_HEADERS = {
@@ -312,4 +314,4 @@ def _quietly(function, *args):
     try:
         function(*args)
     except Exception:
-        pass
+        log.warning("AgentGuard dashboard background task failed", exc_info=True)

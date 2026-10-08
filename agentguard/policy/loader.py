@@ -31,7 +31,8 @@ def load_policy(source: str | Path | dict | Policy) -> Policy:
             raw = Path(source).read_text(encoding="utf-8")
             if len(raw) > 1_000_000:
                 raise ValueError("Policy too large")
-            source = yaml.load(raw, Loader=UniqueKeyLoader)
+            # UniqueKeyLoader subclasses SafeLoader: no arbitrary object construction.
+            source = yaml.load(raw, Loader=UniqueKeyLoader)  # nosec B506
         return Policy.model_validate(source)
     except Exception as exc:
         raise GuardError("Invalid policy; guard cannot start") from exc

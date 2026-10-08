@@ -353,7 +353,11 @@ class Guard:
             arguments["path"] = absolute_path(arguments["path"], self.context.working_directory)
         if cap == "network.request":
             url = arguments["url"]
-            if type(url) is not str or any(ord(c) <= 32 for c in url) or "\\" in url:
+            if (
+                type(url) is not str
+                or any(ord(c) <= 32 or 127 <= ord(c) <= 159 for c in url)
+                or "\\" in url
+            ):
                 raise ValueError("Invalid URL")
             parsed = urlsplit(url)
             if (

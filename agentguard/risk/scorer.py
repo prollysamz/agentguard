@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from agentguard.core.action import Action
 from agentguard.core.context import SessionRiskContext
 from agentguard.policy.matcher import resolve_path
+from agentguard.risk.commands import analyze as analyze_command
 from agentguard.risk.rules import (
-    DANGEROUS_COMMANDS,
     EXTERNAL_COMMAND,
     PROTECTED_PUSH,
     REMOTE_PUSH,
@@ -58,9 +58,9 @@ def score(action: Action, session: SessionRiskContext, custom=None) -> Risk:
     if cap in {"shell.execute", "repository.write"}:
         if SENSITIVE_PATH.search(command):
             return Risk(100, ("Command references credential files",), True)
-        for pattern, reason in DANGEROUS_COMMANDS:
-            if pattern.search(command):
-                return Risk(100, (reason,), True)
+        destructive = analyze_command(command)
+        if destructive:
+            return Risk(100, tuple(destructive), True)
         if PROTECTED_PUSH.search(command):
             base = max(base, 72)
             reasons.append("Protected branch or force push")
