@@ -24,7 +24,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Typing :: Typed",
 ]
-dependencies = ["pydantic>=2.9,<3", "PyYAML>=6.0.2,<7", "portalocker>=3,<4", "httpx>=0.28,<1"]
+dependencies = [
+    "pydantic>=2.9,<3",
+    "PyYAML>=6.0.2,<7",
+    "portalocker>=3,<4",
+    "httpx>=0.28,<1",
+    "google-re2>=1.1,<2",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1", "build>=1,<2", "twine>=7,<8", "langgraph>=1,<2", "fakeredis>=2.26,<3", "hypothesis>=6.100,<7", "bandit>=1.8,<2"]

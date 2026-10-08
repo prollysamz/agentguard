@@ -28,7 +28,21 @@ class Rule(StrictModel):
     domains: list[str] | None = Field(default=None, min_length=1)
     environment: Literal["development", "test", "staging", "production"] | None = None
     sensitive_data: (
-        list[Literal["api_key", "password", "ssh_key", "jwt", "database_url"]] | None
+        list[
+            Literal[
+                "api_key",
+                "password",
+                "ssh_key",
+                "jwt",
+                "database_url",
+                "email",
+                "phone",
+                "credit_card",
+                "ssn",
+                "iban",
+            ]
+        ]
+        | None
     ) = Field(default=None, min_length=1)
 
     @model_validator(mode="after")

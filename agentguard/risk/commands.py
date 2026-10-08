@@ -74,16 +74,16 @@ def _tokens(command):
 def _pipelines(tokens):
     """[[argv, argv, ...], ...]: pipelines of simple commands."""
     pipelines, pipeline, argv = [], [], []
-    for token in tokens:
-        if token and all(c in PUNCTUATION for c in token):
+    for word in tokens:
+        if word and all(c in PUNCTUATION for c in word):
             if argv:
                 pipeline.append(argv)
                 argv = []
-            if token not in {"|", "|&"} and pipeline:
+            if word not in {"|", "|&"} and pipeline:
                 pipelines.append(pipeline)
                 pipeline = []
-        elif token != "$":  # The "$" of "$(" arrives as its own token.
-            argv.append(token)
+        elif word != "$":  # The "$" of "$(" arrives as its own word.
+            argv.append(word)
     if argv:
         pipeline.append(argv)
     if pipeline:

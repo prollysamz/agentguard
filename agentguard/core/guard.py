@@ -563,7 +563,8 @@ class Guard:
                 if tool.verifier
                 else {"status": "not_configured"}
             )
-            session.state.sensitive_data_seen.update(detect_secrets(result))
+            found = detect_secrets(result)
+            session.state.sensitive_data_seen.update(found)
             session.state.cumulative_risk += decision.risk_score
             if action.capability.startswith("filesystem."):
                 session.state.files_accessed.append(action.arguments["path"])
@@ -577,7 +578,7 @@ class Guard:
                 execution_status="success",
                 verification=verification,
                 result_type=type(result).__name__,
-                sensitive_result=bool(detect_secrets(result)),
+                sensitive_result=bool(found),
             )
             return result
         except Exception as exc:

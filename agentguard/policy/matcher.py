@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 
 from agentguard.core.action import Action
 from agentguard.policy.schema import Rule
-from agentguard.risk.secrets import detect_secrets
+from agentguard.risk.secrets import detect_sensitive
 
 
 def absolute_path(path: str, cwd: str) -> str:
@@ -58,6 +58,6 @@ def matches(rule: Rule, action: Action) -> bool:
         host = urlsplit(action.arguments["url"]).hostname or ""
         if not any(domain_matches(host, d) for d in rule.domains):
             return False
-    if rule.sensitive_data and not set(rule.sensitive_data) & detect_secrets(action.arguments):
+    if rule.sensitive_data and not set(rule.sensitive_data) & detect_sensitive(action.arguments):
         return False
     return True

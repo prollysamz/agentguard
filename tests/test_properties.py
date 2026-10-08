@@ -22,6 +22,7 @@ from agentguard.core.context import SessionRiskContext
 from agentguard.execution import FilesystemExecutor
 from agentguard.policy.loader import load_policy
 from agentguard.policy.matcher import canonical_path, domain_matches, path_matches
+from agentguard.risk.rulesets import shannon_entropy
 from agentguard.risk.scorer import score
 from agentguard.risk.secrets import detect_secrets, redact
 
@@ -268,7 +269,10 @@ token_body = st.text(alphabet=string.ascii_letters + string.digits, min_size=36,
 @given(
     secret=st.one_of(
         st.builds(lambda b: "ghp_" + b, token_body),
-        st.builds(lambda b: "AKIA" + b[:16].upper(), token_body),
+        st.builds(
+            lambda b: "AKIA" + b,
+            st.text(alphabet=string.ascii_uppercase + "234567", min_size=16, max_size=16),
+        ),
         st.builds(lambda b: "sk-" + b + "abc", token_body),
     ),
     before=st.text(max_size=20),
@@ -277,6 +281,7 @@ token_body = st.text(alphabet=string.ascii_letters + string.digits, min_size=36,
 )
 def test_redaction_never_leaks_detected_secrets(secret, before, after, key):
     assume(secret[:4] not in before + after)
+    assume(shannon_entropy(secret) >= 3.5)  # Like gitleaks, ignore obviously fake keys.
     payload = {key: f"{before} {secret} {after}", "nested": [{"value": secret}]}
     assert "api_key" in detect_secrets(payload)
     assert secret not in json.dumps(redact(payload))

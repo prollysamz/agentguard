@@ -11,7 +11,7 @@ from agentguard.risk.rules import (
     REMOTE_PUSH,
     SENSITIVE_PATH,
 )
-from agentguard.risk.secrets import detect_secrets
+from agentguard.risk.secrets import detect_pii, detect_secrets
 
 
 @dataclass(frozen=True)
@@ -79,6 +79,13 @@ def score(action: Action, session: SessionRiskContext, custom=None) -> Risk:
     if secrets:
         base += 20
         reasons.append("Sensitive data in arguments")
+    personal = detect_pii(action.arguments) if outbound else set()
+    if personal & {"credit_card", "ssn", "iban"}:
+        base += 30
+        reasons.append("Financial or government identifier in outbound payload")
+    elif personal:
+        base += 10
+        reasons.append("Personal data in outbound payload")
     if action.context.environment == "production":
         base += 15
         reasons.append("Production environment")
