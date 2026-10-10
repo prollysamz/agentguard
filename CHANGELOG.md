@@ -6,11 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-10
+
 ### Fixed
-- Changes to `core.hooksPath` through legacy or modern `git config` commands now
-  raise ask-level risk, including wrapped shell commands. Queries and unrelated settings
-  remain allowed by this check.
-- Ask-level command concerns now propagate through shell, cmd, PowerShell and eval wrappers.
+- Ask-level command concerns (irreversible infrastructure operations, raw network transfers,
+  environment dumps, inline code that runs commands) were dropped when the command was wrapped
+  in `bash -c`, `cmd /c`, PowerShell `-Command` or `eval`, so `bash -c 'terraform destroy'`
+  ran without approval. They now propagate through these wrappers, within the nesting limit.
+- Changes to `core.hooksPath` through legacy or modern `git config` commands now raise
+  ask-level risk, including wrapped shell commands. Queries and unrelated settings remain
+  allowed by this check.
 
 ## [0.4.0] - 2026-10-08
 
@@ -124,7 +129,8 @@ Initial source release: policy as code, deterministic risk scoring, CLI approval
 controlled executors, workspace verification, hash-chained audit log, MCP adapter,
 and the prompt-injection demo with an optional local Gemma agent and judge.
 
-[Unreleased]: https://github.com/prollysamz/agentguard/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/prollysamz/agentguard/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/prollysamz/agentguard/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/prollysamz/agentguard/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/prollysamz/agentguard/compare/971b8bd...v0.3.0
 [0.2.0]: https://github.com/prollysamz/agentguard/compare/8a0f847...971b8bd

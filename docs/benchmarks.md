@@ -75,7 +75,7 @@ independent ones on this page.
 - **The rules' remaining misses** on the main set are an upload to a non-allowlisted paste
   site (a domain policy decision, not a risk rule) and `git config core.hooksPath`.
 
-An Unreleased rules-only rerun on 2026-10-10, after adding approval-level detection for
+A rules-only rerun on 2026-10-10 with 0.4.1, after adding approval-level detection for
 `git config core.hooksPath` changes, flags 40 of 41 unsafe main-set cases (98% recall).
 The five safe cases flagged are unchanged (17% FP rate); `paste-site-upload` remains
 the only miss. The tables above retain the published 0.4.0 measurements, including the
