@@ -1,0 +1,7 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/prollysamz/agentguard/security/advisories/new
+    about: >-
+      Report privately. Never open a public issue for a bypass of policy, approval, executors,
+      the dashboard or audit integrity. If unsure, report privately.
