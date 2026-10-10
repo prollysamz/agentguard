@@ -1,6 +1,7 @@
 import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -180,8 +181,13 @@ def test_rate_limiter_failure_denies(make_guard):
         read("a.txt")
 
 
-def test_local_rate_limiter_window():
+def test_local_rate_limiter_window(monkeypatch):
+    # A fake clock: real sleeps are unreliable against the ~15 ms Windows timer resolution.
+    now = [1000.0]
+    monkeypatch.setattr("agentguard.core.ratelimit.time", SimpleNamespace(monotonic=lambda: now[0]))
     limiter = LocalRateLimiter()
-    assert [limiter.hit("k", 2, window=0.05) for _ in range(3)] == [True, True, False]
-    threading.Event().wait(0.06)
-    assert limiter.hit("k", 2, window=0.05)
+    assert [limiter.hit("k", 2, window=10) for _ in range(3)] == [True, True, False]
+    now[0] += 9.9
+    assert not limiter.hit("k", 2, window=10)
+    now[0] += 0.1
+    assert limiter.hit("k", 2, window=10)
