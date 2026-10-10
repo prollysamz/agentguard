@@ -76,7 +76,6 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: ${{ runner.temp }}
     steps:
       # No checkout: the wheel is installed and run with no source tree present.
       - uses: actions/setup-python@v6
@@ -90,7 +89,9 @@ jobs:
         with:
           name: smoke
           path: ${{ runner.temp }}/smoke
-      - run: bash smoke/scripts/smoke_test_wheel.sh dist/*.whl smoke/examples/quickstart.py
+      - run: |
+          cd "$RUNNER_TEMP"
+          bash smoke/scripts/smoke_test_wheel.sh dist/*.whl smoke/examples/quickstart.py
 
   publish:
     needs: [checks, build, smoke]
