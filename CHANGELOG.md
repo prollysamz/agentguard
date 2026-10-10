@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `scripts/injection_live.py`: runs a live Ollama model against the injected README with
+  permissive policies and recording tool stubs, and counts the attack calls it proposes, the
+  ones AgentGuard blocks and the ones that reach a tool.
+- `tests/test_injection_replay.py`: replays the injection's calls through a permissive policy.
+- `GemmaAgent.SYSTEM`, so the demo agent's system prompt can be overridden.
+
 ## [0.4.1] - 2026-10-10
 
 ### Fixed
