@@ -1,7 +1,10 @@
 # Public API
 
-These names are the supported API. Everything else is internal and may change between
-0.x releases. Breaking changes are listed in the [changelog](changelog.md).
+This page is the list of AgentGuard's designated public API: the names under
+[`agentguard`](#agentguard) and in [Other public modules](#other-public-modules).
+[Provisional modules](#provisional-modules) are usable but may change in any minor release.
+Everything else is internal and may change without notice. Breaking changes are listed in
+the [changelog](changelog.md); see [Stability](stability.md) for what is proposed for 1.0.
 
 ## `agentguard`
 
@@ -46,17 +49,25 @@ Constructor options: `mode` is `"enforce"` or `"dry-run"`; `context` is
 | `agentguard.audit.reader` | `read_log` |
 | `agentguard.audit.report` | `build_report`, `format_report` |
 | `agentguard.core.ratelimit` | `LocalRateLimiter`, `RedisRateLimiter` |
-| `agentguard.dashboard.app` | `create_app` |
 | `agentguard.execution` | `ContainerExecutor`, `FilesystemExecutor`, `ShellExecutor`, `NetworkExecutor`, `WorkspaceVerifier` |
 | `agentguard.execution.egress` | `EgressProxy` |
-| `agentguard.risk.commands` | `analyze`, `assess` |
 | `agentguard.risk.secrets` | `detect_secrets`, `detect_pii`, `detect_sensitive`, `redact` |
-| `agentguard.bench.judge` | `load_cases`, `run_benchmark`, `summarize` |
 | `agentguard.adapters.langchain` | `guarded_tool`, `from_guarded` |
 | `agentguard.adapters.openai_agents` | `guarded_tool`, `from_guarded` |
 | `agentguard.adapters.adk` | `guarded_tool`, `from_guarded` |
 | `agentguard.adapters.mcp` | `register_tool` |
 | `agentguard.adapters.python` | `GuardMiddleware` |
 | `agentguard.risk.gemma_judge` | `GemmaJudge`, `OllamaClient` |
+
+## Provisional modules
+
+These work and are documented, but their names, signatures and results may change in any
+minor release, with a changelog note. Do not build long-lived integrations on them.
+
+| Module | Names | Why provisional |
+| --- | --- | --- |
+| `agentguard.bench.judge` | `load_cases`, `run_benchmark`, `summarize` | Benchmark helpers; the case format and metrics are still evolving |
+| `agentguard.risk.commands` | `analyze`, `assess` | Command-analysis internals; use `explain` or a `Guard` for decisions |
+| `agentguard.dashboard.app` | `create_app` | Dashboard internals; run it with `agentguard dashboard` |
 
 The package ships `py.typed`.

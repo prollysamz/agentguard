@@ -11,7 +11,11 @@ All notable changes to this project are documented here. The format follows
   (missing, pending or failed runs block it), and after the built wheel passes a smoke test
   in a clean environment, outside any checkout, on Linux, Windows and macOS with Python 3.11
   and 3.14. It can be run manually to check the gates without publishing.
-- `SECURITY.md` lists supported versions and what to report privately.
+- `SECURITY.md` lists supported versions, what to report privately, and how reports are
+  triaged and disclosed.
+- `docs/api.md` is now the single list of public API, and the package docstring points to
+  it. `agentguard.bench`, `agentguard.risk.commands` and `agentguard.dashboard` are marked
+  provisional: they may change in any minor release.
 
 ### Added
 - `docs/stability.md`: proposed 1.0 stability commitments, not yet adopted.

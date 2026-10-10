@@ -35,5 +35,5 @@ A useful report includes the affected version, a minimal local reproduction, exp
 observed enforcement behavior, and whether an unapproved side effect occurred. Use synthetic
 credentials and temporary files. Do not test against resources you do not own.
 
-Reports are triaged by the maintainer ([@prollysamz](https://github.com/prollysamz)). Fixes
-are coordinated in a private advisory and disclosed with the release that contains them.
+Reports are triaged by the maintainer ([@prollysamz](https://github.com/prollysamz)), who
+will coordinate disclosure through a private advisory when a fix or mitigation is available.
