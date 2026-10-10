@@ -71,6 +71,7 @@ nav:
       - Public API: api.md
       - Threat model: security.md
       - Security review: security-review.md
+      - Stability (proposal): stability.md
       - Benchmarks: benchmarks.md
       - Changelog: changelog.md
 

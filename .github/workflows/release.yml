@@ -1,13 +1,44 @@
 name: Release
-# Publishes to PyPI with trusted publishing (no API token) when a GitHub release is published.
+# Publishes to PyPI with trusted publishing (no API token) when a GitHub release is published,
+# and only if CI and Security have passed on the tagged commit and the built wheel passes a
+# smoke test in clean environments. Missing, pending or failed checks stop the release: wait for
+# them or fix them, then re-run this workflow. A manual run (workflow_dispatch) or a pull request
+# that changes the release tooling exercises the gates without publishing.
 # One-time setup on PyPI: add a pending publisher for project agentguard-oss with
 # owner prollysamz, repository agentguard, workflow release.yml, environment pypi.
 on:
   release:
     types: [published]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/require_checks.sh
+      - scripts/smoke_test_wheel.sh
+
+permissions:
+  contents: read
 
 jobs:
+  checks:
+    # On a pull request its own checks are still running; they gate the merge instead.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: Require passing CI and Security runs on this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/require_checks.sh "$GITHUB_REPOSITORY" "$GITHUB_SHA" ci.yml security.yml
+
   build:
+    needs: checks
+    if: >-
+      !cancelled() && (needs.checks.result == 'success' ||
+      (github.event_name == 'pull_request' && needs.checks.result == 'skipped'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -15,6 +46,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check the tag matches the package version
+        if: github.event_name == 'release'
         run: |
           version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           test "${GITHUB_REF_NAME}" = "v${version}" || { echo "Tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
@@ -25,9 +57,45 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: smoke
+          path: |
+            scripts/smoke_test_wheel.sh
+            examples/quickstart.py
+
+  smoke:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.14']
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # No checkout: the wheel is installed and run with no source tree present.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: smoke
+          path: ${{ runner.temp }}/smoke
+      - run: |
+          cd "$RUNNER_TEMP"
+          bash smoke/scripts/smoke_test_wheel.sh dist/*.whl smoke/examples/quickstart.py
 
   publish:
-    needs: build
+    needs: [checks, build, smoke]
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     environment:
       name: pypi

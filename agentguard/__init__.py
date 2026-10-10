@@ -1,8 +1,8 @@
 """AgentGuard's public SDK.
 
-Public API: the names in ``__all__`` here, plus ``agentguard.approval``,
-``agentguard.execution``, ``agentguard.adapters.*`` and
-``agentguard.risk.gemma_judge.GemmaJudge``. Other modules are internal and may change.
+Public API: the names in ``__all__`` here and the modules listed as public in docs/api.md.
+Provisional modules (``agentguard.bench``, ``agentguard.risk.commands`` and
+``agentguard.dashboard``) may change in any minor release. Other modules are internal.
 """
 
 from importlib.metadata import PackageNotFoundError, version

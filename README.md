@@ -157,5 +157,6 @@ python -m ruff check .
 mkdocs serve
 ```
 
-CI runs the tests on Linux and Windows with Python 3.11 and 3.12. See
-[CONTRIBUTING.md](CONTRIBUTING.md). MIT licensed.
+CI runs the tests on Linux, Windows and macOS with Python 3.11 to 3.14. See
+[CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately, as described in
+[SECURITY.md](SECURITY.md). MIT licensed.

@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a new control, integration or improvement.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Large new integrations are worth discussing here before implementing them. See
+        [CONTRIBUTING.md](https://github.com/prollysamz/agentguard/blob/main/CONTRIBUTING.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what stops you today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: The API, policy field or CLI change you have in mind, with an example.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security implications
+      description: >-
+        Could this relax an existing control, widen what runs without approval, or add a new
+        place where untrusted input is parsed? How should it fail?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

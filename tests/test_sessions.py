@@ -134,9 +134,11 @@ def test_rate_limit_scopes(make_guard, scope, agents, expected_allowed):
     assert allowed == expected_allowed
 
 
-def test_redis_limit_is_shared_between_guards(tmp_path):
+def test_redis_limit_is_shared_between_guards(tmp_path, monkeypatch):
     fakeredis = pytest.importorskip("fakeredis")
     server = fakeredis.FakeServer()
+    # Fixed windows reset on the minute; a run that crossed one would see the count reset.
+    monkeypatch.setattr("agentguard.core.ratelimit.time", SimpleNamespace(time=lambda: 6000.0))
 
     def worker(n):
         # Separate Guards and clients, as in separate processes, sharing one Redis.

@@ -1,6 +1,9 @@
 name: CI
 on:
   push:
+    # Branches only: a tag points at a commit CI already tested on its branch, and a run started
+    # by creating a release's tag would still be pending when the release workflow checks it.
+    branches: ['**']
   pull_request:
   schedule:
     - cron: '17 3 * * *'  # Nightly: longer property-based runs.

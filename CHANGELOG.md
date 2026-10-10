@@ -6,7 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The release workflow publishes only if CI and Security passed on exactly the tagged commit
+  (missing, pending or failed runs block it), and after the built wheel passes a smoke test
+  in a clean environment, outside any checkout, on Linux, Windows and macOS with Python 3.11
+  and 3.14. It can be run manually to check the gates without publishing.
+- `SECURITY.md` lists supported versions, what to report privately, and how reports are
+  triaged and disclosed.
+- `docs/api.md` is now the single list of public API, and the package docstring points to
+  it. `agentguard.bench`, `agentguard.risk.commands` and `agentguard.dashboard` are marked
+  provisional: they may change in any minor release.
+
 ### Added
+- `docs/stability.md`: proposed 1.0 stability commitments, not yet adopted.
+- Issue forms for bugs and feature requests, a pull request template, and a link that sends
+  vulnerability reports to private reporting.
 - `scripts/injection_live.py`: runs a live Ollama model against the injected README with
   permissive policies and recording tool stubs, and counts the attack calls it proposes, the
   ones AgentGuard blocks and the ones that reach a tool.
