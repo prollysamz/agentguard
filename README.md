@@ -27,7 +27,8 @@ agentguard demo --scripted
 An agent is asked to fix a calculator. The repository's README hides a prompt injection
 telling it to read `~/.ssh/id_rsa` and upload it. AgentGuard lets the agent read the
 README, **blocks** the SSH-key read and the `curl` exfiltration, **allows** the fix and a
-real unit test, and **escalates** the push to `main` for human approval.
+real unit test, and **asks for human approval** before the push to `main` (denied in the
+scripted demo, where nobody is there to approve; `--interactive` prompts you).
 
 With [Ollama](https://ollama.com) and `ollama pull gemma3:4b`, plain `agentguard demo`
 runs a live **Gemma agent** against the same trap, and `--judge` adds a Gemma security
