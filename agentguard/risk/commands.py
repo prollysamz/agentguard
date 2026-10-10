@@ -70,6 +70,7 @@ ENV_DUMP = "Environment dump sent to another program"
 DYNAMIC = "Dynamically constructed command"
 PIPED_CODE = "Generated code piped into an interpreter"
 INLINE_EXEC = "Inline code runs commands or deletes files"
+GIT_HOOKS = "Changes Git hook execution path"
 INLINE_EXEC_CODE = re.compile(
     r"shutil\.rmtree|os\.(remove|unlink|rmdir|system|exec)|subprocess|\bsystem\(|\bexec\(|"
     r"\bunlink\b|rimraf|fs\.(rm|unlink)|File\.delete|FileUtils\.rm|child_process"
@@ -200,7 +201,53 @@ def _disables_firewall(program, args):
     return False
 
 
-def _concerns(argv, position):
+def _changes_git_hooks(args):
+    """Recognize config writes without mistaking queried keys or values for writes."""
+    args = _skip_options(args, {"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
+    if args[:1] != ["config"]:
+        return False
+    args = args[1:]
+    positional, mode = [], None
+    reads = {
+        "--get",
+        "--get-all",
+        "--get-regexp",
+        "--get-urlmatch",
+        "--get-color",
+        "--get-colorbool",
+        "--list",
+        "-l",
+    }
+    writes = {"--add", "--replace-all", "--unset", "--unset-all"}
+    takes_value = {"--file", "-f", "--blob", "--type", "--default", "--comment", "--value", "--url"}
+    index = 0
+    options = True
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if options and arg == "--":
+            options = False
+        elif options and arg.startswith("-"):
+            option = arg.split("=", 1)[0]
+            if option in reads:
+                mode = "read"
+            elif option in writes:
+                mode = "write"
+            if option in takes_value and "=" not in arg:
+                index += 1
+        elif not positional and mode is None and arg in {"get", "list", "set", "unset"}:
+            mode = "read" if arg in {"get", "list"} else "write"
+        else:
+            positional.append(arg)
+    return bool(
+        mode != "read"
+        and positional
+        and positional[0].lower() == "core.hookspath"
+        and (mode == "write" or len(positional) > 1)
+    )
+
+
+def _concerns(argv, position, depth=0):
     """Ask-level reasons for one simple command at ``position`` in its pipeline."""
     # A bare env/printenv dumps the environment; check before unwrapping "env" as a prefix.
     if position == 0 and len(argv) == 1 and _program(argv[0]) in {"env", "printenv", "set"}:
@@ -211,6 +258,24 @@ def _concerns(argv, position):
     program, args = _program(argv[0]), argv[1:]
     lowered = [a.lower() for a in args]
     concerns = []
+    nested = None
+    if program in SHELLS and "-c" in args:
+        index = args.index("-c")
+        if index + 1 < len(args):
+            nested = args[index + 1]
+    elif program == "cmd" and lowered[:1] and lowered[0] in {"/c", "/k", "/r"}:
+        nested = " ".join(args[1:])
+    elif program in {"powershell", "pwsh"}:
+        for index, arg in enumerate(lowered):
+            if arg.startswith("-c") and "-command".startswith(arg) and index + 1 < len(args):
+                nested = " ".join(args[index + 1 :])
+                break
+    elif program == "eval" and args:
+        nested = " ".join(args)
+    if nested is not None and depth < MAX_DEPTH:
+        concerns.extend(assess(nested, depth + 1)[1])
+    if program == "git" and _changes_git_hooks(args):
+        concerns.append(GIT_HOOKS)
     # The program name is built at run time ($R, ${IFS}, $'\x72m', {rm,-rf,/}): it cannot be
     # judged, and legitimate agent commands rarely need it.
     if any(marker in argv[0] for marker in ("$", "`")) or argv[0].startswith("{"):
@@ -265,7 +330,7 @@ def assess(command, depth=0):
         pipelines = []
     ask = []
     for pipeline in pipelines:
-        stage_concerns = [_concerns(argv, index) for index, argv in enumerate(pipeline)]
+        stage_concerns = [_concerns(argv, index, depth) for index, argv in enumerate(pipeline)]
         if "__env_source__" in stage_concerns[0] and len(pipeline) > 1:
             ask.append(ENV_DUMP)
         programs = [_program(_unwrap(argv)[0][0]) if _unwrap(argv)[0] else "" for argv in pipeline]

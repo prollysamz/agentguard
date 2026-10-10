@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Changes to `core.hooksPath` through legacy or modern `git config` commands now
+  raise ask-level risk, including wrapped shell commands. Queries and unrelated settings
+  remain allowed by this check.
+- Ask-level command concerns now propagate through shell, cmd, PowerShell and eval wrappers.
+
 ## [0.4.0] - 2026-10-08
 
 ### Added

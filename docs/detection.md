@@ -66,3 +66,12 @@ reason to ask rather than decoded. For untrusted workloads, use exact-command ex
 (`ShellExecutor`, `ContainerExecutor`), which run only argv lists you wrote.
 `agentguard explain policy.yaml shell.execute --arg cmd="..."` shows how any command is
 judged. See [Benchmarks](benchmarks.md) for measured recall and false-positive rates.
+
+Changes to Git's `core.hooksPath` also raise risk to 70: redirecting hooks can run
+code on later Git operations or disable existing checks. This covers legacy assignments,
+`--add`, `--replace-all`, `--unset`, `--unset-all`, and modern `config set`/`config unset`,
+across config scopes and explicit files. Queries (`config get`, `--get`, or a key without
+a value) and unrelated settings such as `user.name` do not raise this concern.
+Ask-level concerns propagate through shell, cmd, PowerShell and eval wrappers, within
+the analyzer's nesting limit. This check does not cover every way of configuring hooks,
+such as Git aliases, direct config-file edits or command-scoped `git -c` overrides.
