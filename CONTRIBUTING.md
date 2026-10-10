@@ -10,7 +10,9 @@ version in `CHANGELOG.md`, merge, and wait for CI and Security to pass on the me
 Then publish a GitHub release tagged `vX.Y.Z` on that commit. The release workflow publishes
 to PyPI only if CI and Security passed on exactly that commit, the tag matches the version,
 and the built wheel passes `scripts/smoke_test_wheel.sh` in clean environments on Linux,
-Windows and macOS. If a check was still pending, re-run the release workflow once it passes.
+Windows and macOS. Every CI and Security run on that commit counts, including nightly and
+weekly runs; a failed run is cleared by re-running it, because the gate reads each run's
+latest attempt. If a check was still pending, re-run the release workflow once it passes.
 To exercise the gates without publishing, run the workflow manually from the Actions tab.
 
 Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md), not in issues
